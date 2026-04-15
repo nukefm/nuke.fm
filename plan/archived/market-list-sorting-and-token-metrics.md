@@ -94,3 +94,12 @@ These rules keep token-level metrics explicit and deterministic:
 ## Unresolved Questions
 
 - None for planning.
+
+## Status
+
+- Completed on the coordinator branch after integrating the dedicated worktree commit.
+- Added DexScreener-backed token metric snapshots plus the `sync-token-metrics` CLI command.
+- Routed current-market sorting through `MarketStore.list_token_cards()` for the public API and index page.
+- Added null-last sorting for liquidity, dump percentage, underlying volume, and underlying market cap.
+- Preserved sort selection through query parameters on the auto-refreshing board.
+- Validation completed with `uv run --env-file .env pytest`.

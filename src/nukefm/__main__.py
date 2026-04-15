@@ -71,7 +71,7 @@ def main() -> None:
         return treasury
 
     if arguments.command == "sync-deposits":
-        credited_deposits = treasury.reconcile_deposits(account_store)
+        credited_deposits = get_treasury().reconcile_deposits(account_store)
         logger.info(f"Credited {len(credited_deposits)} deposit balance changes.")
         return
 

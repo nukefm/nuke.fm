@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">Prediction Market MVP</p>
+    <h1>Rolling token markets without a trading UI</h1>
+  </div>
+  <p class="hero-copy">
+    The catalog publishes the current market series for each ingested Bags token. Current pricing,
+    liquidity seeding, and settlement metrics land in later deliverables.
+  </p>
+</section>
+
+{% if tokens %}
+<section class="grid">
+  {% for token in tokens %}
+  <a class="card" href="/tokens/{{ token.mint }}">
+    <div class="card-header">
+      <div>
+        <p class="symbol">{{ token.symbol }}</p>
+        <h2>{{ token.name }}</h2>
+      </div>
+      <span class="pill state-{{ token.current_market.state }}">{{ token.current_market.state }}</span>
+    </div>
+    <p class="mint">{{ token.mint }}</p>
+    <p class="question">{{ token.current_market.question }}</p>
+    <dl class="stats">
+      <div>
+        <dt>Series</dt>
+        <dd>{{ token.current_market.sequence_number }}</dd>
+      </div>
+      <div>
+        <dt>Launch Feed Timestamp</dt>
+        <dd>{{ token.launched_at or "Unavailable" }}</dd>
+      </div>
+      <div>
+        <dt>Market Start</dt>
+        <dd>{{ token.current_market.market_start or "Awaiting liquidity" }}</dd>
+      </div>
+      <div>
+        <dt>Expiry</dt>
+        <dd>{{ token.current_market.expiry or "Not started" }}</dd>
+      </div>
+    </dl>
+  </a>
+  {% endfor %}
+</section>
+{% else %}
+<section class="empty-state">
+  <h1>No tokens ingested yet</h1>
+  <p>Set <code>BAGS_API_KEY</code>, run <code>uv run --env-file .env python -m nukefm ingest</code>, then refresh this page.</p>
+</section>
+{% endif %}
+
+<script>
+  setTimeout(() => window.location.reload(), {{ refresh_seconds * 1000 }});
+</script>
+{% endblock %}

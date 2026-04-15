@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero token-hero">
+  <div>
+    <p class="eyebrow">{{ token.symbol }}</p>
+    <h1>{{ token.name }}</h1>
+    <p class="mint">{{ token.mint }}</p>
+  </div>
+  <span class="pill state-{{ token.current_market.state }}">{{ token.current_market.state }}</span>
+</section>
+
+<section class="detail-layout">
+  <article class="detail-card">
+    <h2>Current Market</h2>
+    <p class="question">{{ token.current_market.question }}</p>
+    <dl class="stats">
+      <div>
+        <dt>Series</dt>
+        <dd>{{ token.current_market.sequence_number }}</dd>
+      </div>
+      <div>
+        <dt>State</dt>
+        <dd>{{ token.current_market.state }}</dd>
+      </div>
+      <div>
+        <dt>Market Start</dt>
+        <dd>{{ token.current_market.market_start or "Awaiting first liquidity deposit" }}</dd>
+      </div>
+      <div>
+        <dt>Expiry</dt>
+        <dd>{{ token.current_market.expiry or "Not started" }}</dd>
+      </div>
+      <div>
+        <dt>Liquidity Deposit Address</dt>
+        <dd>{{ token.current_market.liquidity_deposit_address or "Not assigned yet" }}</dd>
+      </div>
+    </dl>
+  </article>
+
+  <article class="detail-card">
+    <h2>Recent Activity</h2>
+    <ul class="activity-list">
+      {% for activity in token.recent_activity %}
+      <li>
+        <span>{{ activity.summary }}</span>
+        <time>{{ activity.timestamp }}</time>
+      </li>
+      {% endfor %}
+    </ul>
+  </article>
+</section>
+
+<section class="detail-card">
+  <h2>Past Markets</h2>
+  {% if token.past_markets %}
+  <ul class="activity-list">
+    {% for market in token.past_markets %}
+    <li>
+      <span>Series {{ market.sequence_number }} resolved as {{ market.state }}</span>
+      <time>{{ market.resolved_at }}</time>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No resolved markets yet.</p>
+  {% endif %}
+</section>
+
+<script>
+  setTimeout(() => window.location.reload(), {{ refresh_seconds * 1000 }});
+</script>
+{% endblock %}

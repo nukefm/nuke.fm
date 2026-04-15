@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>nuke.fm</title>
+    <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="/">nuke.fm</a>
+        <p class="tagline">Read-only market catalog for rolling Bags nuke markets.</p>
+      </header>
+      <main>
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>

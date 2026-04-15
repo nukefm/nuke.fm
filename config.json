@@ -1,1 +1,8 @@
-{}
+{
+  "app_name": "nuke.fm",
+  "database_path": "data/nukefm.sqlite3",
+  "log_path": "logs/nukefm.log",
+  "frontend_refresh_seconds": 30,
+  "bags_base_url": "https://public-api-v2.bags.fm/api/v1",
+  "bags_launch_feed_path": "/token-launch/feed"
+}

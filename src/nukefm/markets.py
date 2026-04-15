@@ -81,6 +81,25 @@ class MarketStore:
                     UNIQUE(market_id, observed_balance_after_atomic)
                 );
 
+                CREATE TABLE IF NOT EXISTS treasury_debt_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    market_id INTEGER REFERENCES markets(id) ON DELETE SET NULL,
+                    amount_atomic INTEGER NOT NULL,
+                    entry_type TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS market_liquidity_seed_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    market_id INTEGER NOT NULL REFERENCES markets(id) ON DELETE CASCADE,
+                    week_start TEXT NOT NULL,
+                    amount_atomic INTEGER NOT NULL,
+                    treasury_debt_entry_id INTEGER NOT NULL REFERENCES treasury_debt_entries(id) ON DELETE RESTRICT,
+                    credited_at TEXT NOT NULL,
+                    UNIQUE(market_id, week_start)
+                );
+
                 CREATE TABLE IF NOT EXISTS market_positions (
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     market_id INTEGER NOT NULL REFERENCES markets(id) ON DELETE CASCADE,
@@ -618,70 +637,12 @@ class MarketStore:
                 """,
                 [observed_balance_after_atomic, credited_at, market_id],
             )
-
-            pool = self._load_pool(connection, market_id, required=False)
-            if pool is None:
-                opened_at = self._parse_timestamp(credited_at)
-                expiry = (opened_at + self._market_duration).isoformat()
-                connection.execute(
-                    """
-                    INSERT INTO market_pools (
-                        market_id,
-                        yes_reserve_atomic,
-                        no_reserve_atomic,
-                        yes_weight,
-                        no_weight,
-                        cash_backing_atomic,
-                        total_liquidity_atomic,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (?, ?, ?, '0.5', '0.5', ?, ?, ?, ?)
-                    """,
-                    [market_id, amount_atomic, amount_atomic, amount_atomic, amount_atomic, credited_at, credited_at],
-                )
-                connection.execute(
-                    """
-                    UPDATE markets
-                    SET state = 'open', market_start = ?, expiry = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    [credited_at, expiry, credited_at, market_id],
-                )
-                yes_price_usd = Decimal("0.5")
-            else:
-                preserved_yes_price = yes_price(pool)
-                updated_yes_weight, updated_no_weight = retuned_weights_for_equal_liquidity(
-                    yes_reserve_atomic=pool.yes_reserve_atomic,
-                    no_reserve_atomic=pool.no_reserve_atomic,
-                    equal_liquidity_atomic=amount_atomic,
-                    preserved_yes_price=preserved_yes_price,
-                )
-                connection.execute(
-                    """
-                    UPDATE market_pools
-                    SET
-                        yes_reserve_atomic = yes_reserve_atomic + ?,
-                        no_reserve_atomic = no_reserve_atomic + ?,
-                        yes_weight = ?,
-                        no_weight = ?,
-                        cash_backing_atomic = cash_backing_atomic + ?,
-                        total_liquidity_atomic = total_liquidity_atomic + ?,
-                        updated_at = ?
-                    WHERE market_id = ?
-                    """,
-                    [
-                        amount_atomic,
-                        amount_atomic,
-                        str(updated_yes_weight),
-                        str(updated_no_weight),
-                        amount_atomic,
-                        amount_atomic,
-                        credited_at,
-                        market_id,
-                    ],
-                )
-                yes_price_usd = preserved_yes_price
+            yes_price_usd = self._apply_liquidity_credit(
+                connection,
+                market_id=market_id,
+                amount_atomic=amount_atomic,
+                credited_at=credited_at,
+            )
 
             return {
                 "market_id": market_id,
@@ -691,6 +652,163 @@ class MarketStore:
                 "yes_price_usd": format_decimal(yes_price_usd),
                 "no_price_usd": format_decimal(ONE - yes_price_usd),
             }
+
+    def seed_top_markets_by_market_cap(
+        self,
+        *,
+        amount_atomic: int,
+        limit: int = 10,
+        recorded_at: str | None = None,
+    ) -> list[dict]:
+        credited_at = recorded_at or utc_now()
+        week_start = self._week_start(credited_at)
+
+        with connect_database(self._database_path) as connection:
+            candidate_rows = connection.execute(
+                """
+                WITH ranked_markets AS (
+                    SELECT
+                        markets.id,
+                        markets.token_mint,
+                        tokens.symbol,
+                        token_metrics_snapshots.underlying_market_cap_usd
+                    FROM tokens
+                    JOIN markets
+                      ON markets.id = (
+                        SELECT current_market.id
+                        FROM markets AS current_market
+                        WHERE current_market.token_mint = tokens.mint
+                          AND current_market.state IN ('awaiting_liquidity', 'open', 'halted')
+                        ORDER BY current_market.sequence_number DESC
+                        LIMIT 1
+                      )
+                    JOIN token_metrics_snapshots
+                      ON token_metrics_snapshots.token_mint = tokens.mint
+                     AND token_metrics_snapshots.captured_at = (
+                        SELECT latest_metrics.captured_at
+                        FROM token_metrics_snapshots AS latest_metrics
+                        WHERE latest_metrics.token_mint = tokens.mint
+                        ORDER BY latest_metrics.captured_at DESC
+                        LIMIT 1
+                     )
+                    WHERE token_metrics_snapshots.underlying_market_cap_usd IS NOT NULL
+                    ORDER BY CAST(token_metrics_snapshots.underlying_market_cap_usd AS REAL) DESC, markets.id ASC
+                    LIMIT ?
+                )
+                SELECT
+                    ranked_markets.id,
+                    ranked_markets.token_mint,
+                    ranked_markets.symbol,
+                    ranked_markets.underlying_market_cap_usd
+                FROM ranked_markets
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM market_liquidity_seed_events
+                    WHERE market_liquidity_seed_events.market_id = ranked_markets.id
+                      AND market_liquidity_seed_events.week_start = ?
+                )
+                ORDER BY CAST(ranked_markets.underlying_market_cap_usd AS REAL) DESC, ranked_markets.id ASC
+                """,
+                [limit, week_start],
+            ).fetchall()
+
+            seeded_markets: list[dict] = []
+            for row in candidate_rows:
+                debt_entry = connection.execute(
+                    """
+                    INSERT INTO treasury_debt_entries (
+                        market_id,
+                        amount_atomic,
+                        entry_type,
+                        note,
+                        created_at
+                    )
+                    VALUES (?, ?, 'weekly_market_seed', ?, ?)
+                    RETURNING id
+                    """,
+                    [
+                        row["id"],
+                        amount_atomic,
+                        f"Debt-funded weekly auto-seed for {row['symbol']} current market.",
+                        credited_at,
+                    ],
+                ).fetchone()
+                connection.execute(
+                    """
+                    INSERT INTO market_liquidity_seed_events (
+                        market_id,
+                        week_start,
+                        amount_atomic,
+                        treasury_debt_entry_id,
+                        credited_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [row["id"], week_start, amount_atomic, debt_entry["id"], credited_at],
+                )
+                yes_price_usd = self._apply_liquidity_credit(
+                    connection,
+                    market_id=row["id"],
+                    amount_atomic=amount_atomic,
+                    credited_at=credited_at,
+                )
+                seeded_markets.append(
+                    {
+                        "market_id": row["id"],
+                        "mint": row["token_mint"],
+                        "symbol": row["symbol"],
+                        "week_start": week_start,
+                        "amount_usdc": format_usdc_amount(amount_atomic),
+                        "treasury_debt_usdc": format_usdc_amount(amount_atomic),
+                        "yes_price_usd": format_decimal(yes_price_usd),
+                        "no_price_usd": format_decimal(ONE - yes_price_usd),
+                    }
+                )
+
+            return seeded_markets
+
+    def record_treasury_funding(
+        self,
+        *,
+        amount_atomic: int,
+        funded_at: str | None = None,
+        note: str | None = None,
+    ) -> dict:
+        recorded_at = funded_at or utc_now()
+
+        with connect_database(self._database_path) as connection:
+            outstanding_debt_atomic = self._outstanding_treasury_debt_atomic(connection)
+            if amount_atomic > outstanding_debt_atomic:
+                raise ValueError("Treasury funding exceeds outstanding seed debt.")
+
+            connection.execute(
+                """
+                INSERT INTO treasury_debt_entries (
+                    market_id,
+                    amount_atomic,
+                    entry_type,
+                    note,
+                    created_at
+                )
+                VALUES (NULL, ?, 'treasury_funding', ?, ?)
+                """,
+                [
+                    -amount_atomic,
+                    note or "Recorded operator treasury funding against auto-seed debt.",
+                    recorded_at,
+                ],
+            )
+            remaining_debt_atomic = outstanding_debt_atomic - amount_atomic
+
+        return {
+            "funded_amount_usdc": format_usdc_amount(amount_atomic),
+            "remaining_debt_usdc": format_usdc_amount(remaining_debt_atomic),
+            "recorded_at": recorded_at,
+        }
+
+    def get_outstanding_treasury_debt_usdc(self) -> str:
+        with connect_database(self._database_path) as connection:
+            return format_usdc_amount(self._outstanding_treasury_debt_atomic(connection))
 
     def capture_hourly_snapshots(
         self,
@@ -1266,19 +1384,33 @@ class MarketStore:
         ]
         latest_liquidity = connection.execute(
             """
-            SELECT amount_atomic, credited_at
-            FROM market_liquidity_deposits
-            WHERE market_id = ?
-            ORDER BY id DESC
+            SELECT amount_atomic, credited_at, source
+            FROM (
+                SELECT amount_atomic, credited_at, 'deposit' AS source
+                FROM market_liquidity_deposits
+                WHERE market_id = ?
+                UNION ALL
+                SELECT amount_atomic, credited_at, 'auto_seed' AS source
+                FROM market_liquidity_seed_events
+                WHERE market_id = ?
+            )
+            ORDER BY credited_at DESC
             LIMIT 1
             """,
-            [current_market["id"]],
+            [current_market["id"], current_market["id"]],
         ).fetchone()
         if latest_liquidity is not None:
+            if latest_liquidity["source"] == "auto_seed":
+                summary = (
+                    f"Debt-funded weekly auto-seed of {format_usdc_amount(latest_liquidity['amount_atomic'])} USDC "
+                    "opened or deepened the pool."
+                )
+            else:
+                summary = f"Liquidity credit of {format_usdc_amount(latest_liquidity['amount_atomic'])} USDC deepened the pool."
             activity.append(
                 {
                     "timestamp": latest_liquidity["credited_at"],
-                    "summary": f"Liquidity credit of {format_usdc_amount(latest_liquidity['amount_atomic'])} USDC deepened the pool.",
+                    "summary": summary,
                 }
             )
         latest_snapshot = self._latest_snapshot_row(connection, current_market["id"])
@@ -1416,6 +1548,84 @@ class MarketStore:
             cash_backing_atomic=row["cash_backing_atomic"],
             total_liquidity_atomic=row["total_liquidity_atomic"],
         )
+
+    def _apply_liquidity_credit(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        market_id: int,
+        amount_atomic: int,
+        credited_at: str,
+    ) -> Decimal:
+        market_row = connection.execute("SELECT * FROM markets WHERE id = ?", [market_id]).fetchone()
+        if market_row is None:
+            raise LookupError(f"Unknown market id: {market_id}")
+        if market_row["state"] not in ACTIVE_MARKET_STATES:
+            raise ValueError("Cannot add liquidity to a resolved market.")
+
+        pool = self._load_pool(connection, market_id, required=False)
+        if pool is None:
+            opened_at = self._parse_timestamp(credited_at)
+            expiry = (opened_at + self._market_duration).isoformat()
+            connection.execute(
+                """
+                INSERT INTO market_pools (
+                    market_id,
+                    yes_reserve_atomic,
+                    no_reserve_atomic,
+                    yes_weight,
+                    no_weight,
+                    cash_backing_atomic,
+                    total_liquidity_atomic,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, '0.5', '0.5', ?, ?, ?, ?)
+                """,
+                [market_id, amount_atomic, amount_atomic, amount_atomic, amount_atomic, credited_at, credited_at],
+            )
+            connection.execute(
+                """
+                UPDATE markets
+                SET state = 'open', market_start = ?, expiry = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                [credited_at, expiry, credited_at, market_id],
+            )
+            return Decimal("0.5")
+
+        preserved_yes_price = yes_price(pool)
+        updated_yes_weight, updated_no_weight = retuned_weights_for_equal_liquidity(
+            yes_reserve_atomic=pool.yes_reserve_atomic,
+            no_reserve_atomic=pool.no_reserve_atomic,
+            equal_liquidity_atomic=amount_atomic,
+            preserved_yes_price=preserved_yes_price,
+        )
+        connection.execute(
+            """
+            UPDATE market_pools
+            SET
+                yes_reserve_atomic = yes_reserve_atomic + ?,
+                no_reserve_atomic = no_reserve_atomic + ?,
+                yes_weight = ?,
+                no_weight = ?,
+                cash_backing_atomic = cash_backing_atomic + ?,
+                total_liquidity_atomic = total_liquidity_atomic + ?,
+                updated_at = ?
+            WHERE market_id = ?
+            """,
+            [
+                amount_atomic,
+                amount_atomic,
+                str(updated_yes_weight),
+                str(updated_no_weight),
+                amount_atomic,
+                amount_atomic,
+                credited_at,
+                market_id,
+            ],
+        )
+        return preserved_yes_price
 
     @staticmethod
     def _update_pool(
@@ -1588,3 +1798,22 @@ class MarketStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
+
+    @staticmethod
+    def _outstanding_treasury_debt_atomic(connection: sqlite3.Connection) -> int:
+        row = connection.execute(
+            """
+            SELECT COALESCE(SUM(amount_atomic), 0) AS balance_atomic
+            FROM treasury_debt_entries
+            """
+        ).fetchone()
+        return row["balance_atomic"]
+
+    def _week_start(self, timestamp: str) -> str:
+        current_time = self._parse_timestamp(timestamp).astimezone(UTC)
+        return (current_time - timedelta(days=current_time.weekday())).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        ).isoformat()

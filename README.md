@@ -18,7 +18,8 @@ This repository currently includes these MVP slices:
 - quote and execute API-only trades against the weighted pool
 - capture hourly settlement snapshots from a rolling 24h median of historical trade prices
 - track per-market ATH, threshold, and drawdown from those median prices
-- capture DexScreener token metrics and sort the public market board by liquidity, dump %, underlying volume, or underlying market cap
+- capture Jupiter token metrics and sort the public market board by liquidity, dump %, underlying volume, or underlying market cap
+- debt-fund a weekly $1 PM seed into the top 10 current markets by underlying market cap
 - resolve markets from stored historical snapshots, pay winning accounts, roll the next market forward, and record revenue sweeps
 - expose that catalog through a public JSON API
 - render the same catalog through a read-only web frontend
@@ -103,6 +104,8 @@ MVP. Important current constraints:
 - `uv run --env-file .env python -m nukefm sync-deposits`
 - `uv run --env-file .env python -m nukefm sync-market-liquidity`
 - `uv run --env-file .env python -m nukefm sync-token-metrics`
+- `uv run --env-file .env python -m nukefm seed-weekly-liquidity --top 10 --amount-usdc 1`
+- `uv run --env-file .env python -m nukefm record-treasury-funding --amount-usdc 10`
 - `uv run --env-file .env python -m nukefm snapshot-markets`
 - `uv run --env-file .env python -m nukefm resolve-markets`
 - `uv run --env-file .env python -m nukefm process-withdrawals --limit 100`
@@ -189,5 +192,10 @@ does not sweep or trade from them yet.
 
 Market liquidity deposits use the same monotonic-balance reconciliation pattern, but they credit
 weighted-pool depth and market cash backing instead of a user cash balance.
+
+Weekly auto-seeds are different on purpose. They can open or deepen the top 10 current markets by
+captured underlying market cap without waiting for an observed on-chain deposit. When they do, the
+seed is recorded as explicit treasury debt that the operator can fund later with a matching
+treasury-funding entry.
 
 If Bags changes the launch-feed route, update `bags_launch_feed_path` in `config.json` without changing application code.

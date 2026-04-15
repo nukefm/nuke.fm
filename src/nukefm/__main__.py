@@ -7,6 +7,7 @@ import uvicorn
 from loguru import logger
 
 from .accounts import AccountStore
+from .amounts import parse_usdc_amount
 from .app import create_app
 from .bags import BagsClient
 from .catalog import Catalog
@@ -35,6 +36,14 @@ def main() -> None:
     subparsers.add_parser("sync-token-metrics")
     subparsers.add_parser("snapshot-markets")
     subparsers.add_parser("resolve-markets")
+
+    seed_weekly_liquidity_parser = subparsers.add_parser("seed-weekly-liquidity")
+    seed_weekly_liquidity_parser.add_argument("--top", type=int, default=10)
+    seed_weekly_liquidity_parser.add_argument("--amount-usdc", default="1")
+
+    record_treasury_funding_parser = subparsers.add_parser("record-treasury-funding")
+    record_treasury_funding_parser.add_argument("--amount-usdc", required=True)
+    record_treasury_funding_parser.add_argument("--note")
 
     process_withdrawals_parser = subparsers.add_parser("process-withdrawals")
     process_withdrawals_parser.add_argument("--limit", type=int, default=100)
@@ -114,6 +123,30 @@ def main() -> None:
     if arguments.command == "resolve-markets":
         resolved = market_store.resolve_markets(catalog=catalog, treasury=get_treasury())
         logger.info(f"Resolved {len(resolved)} markets.")
+        return
+
+    if arguments.command == "seed-weekly-liquidity":
+        seeded_markets = market_store.seed_top_markets_by_market_cap(
+            amount_atomic=parse_usdc_amount(arguments.amount_usdc),
+            limit=arguments.top,
+        )
+        logger.info(
+            "Debt-funded weekly seeds applied to {} markets. Outstanding treasury debt is {} USDC.",
+            len(seeded_markets),
+            market_store.get_outstanding_treasury_debt_usdc(),
+        )
+        return
+
+    if arguments.command == "record-treasury-funding":
+        funding = market_store.record_treasury_funding(
+            amount_atomic=parse_usdc_amount(arguments.amount_usdc),
+            note=arguments.note,
+        )
+        logger.info(
+            "Recorded treasury funding of {} USDC. Remaining auto-seed debt is {} USDC.",
+            funding["funded_amount_usdc"],
+            funding["remaining_debt_usdc"],
+        )
         return
 
     if settings.bags_api_key is None:

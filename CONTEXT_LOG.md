@@ -39,9 +39,20 @@
 ## Token Metrics And Sorting
 
 - The live public token-list order now lives in `MarketStore.list_token_cards()`, not in the catalog layer, so the same sort path can serve both `/v1/public/tokens` and `/`.
-- Token-level DexScreener metrics are stored as snapshots in SQLite instead of being fetched during reads. That keeps the board deterministic and lets the operator refresh metrics explicitly with a CLI command.
-- Underlying volume is summed across the token's current DexScreener pairs, while underlying market cap comes from the most-liquid pair that actually has a market-cap value.
+- Token-level metrics are stored as snapshots in SQLite instead of being fetched during reads. That keeps the board deterministic and lets the operator refresh metrics explicitly with a CLI command.
+- Jupiter token search is the current metric source for Bags tokens because it covers Bags mints and returns market-cap, liquidity, and rolling volume fields that were often missing under the earlier DexScreener path.
+- Underlying volume is stored from the current metric source snapshot, while underlying market cap should come from an explicit reported market-cap field rather than being inferred at read time.
 - Missing metrics stay `null` and are sorted last in both directions so absent data never dominates the board.
+
+## Weekly PM Seeding
+
+- The weekly top-10 auto-seed is intentionally separate from on-chain liquidity reconciliation. `sync-market-liquidity` still means "observed USDC arrived on-chain", while the weekly seed books internal pool liquidity immediately and records matching treasury debt.
+- That debt is explicit, not an implicit negative treasury balance. Operators pay it down later with a dedicated treasury-funding command after they top up treasury USDC.
+
+## Frontend Positioning
+
+- The web UI should read like a token-trader briefing, not a PM trading terminal. The primary user is a Bags trader who wants PM-derived risk context for the underlying token.
+- The first screen should answer three questions quickly: is the PM signal live, what level matters, and how much supporting token context exists. Lower sections can hold mechanics and history.
 
 ## EC2 Deploy
 

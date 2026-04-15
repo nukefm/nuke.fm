@@ -2,6 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from nukefm.accounts import AccountStore
+from nukefm.amounts import parse_usdc_amount
 from nukefm.bags import BagsToken
 from nukefm.catalog import Catalog
 from nukefm.dexscreener import DexScreenerPair
@@ -341,3 +342,140 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     for (sort_by, sort_direction), expected_mints in expected_orders.items():
         sorted_cards = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)
         assert [card["mint"] for card in sorted_cards] == expected_mints
+
+
+def test_weekly_auto_seed_targets_top_market_caps_once_per_week(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    catalog = Catalog(database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint=f"Mint{index:02d}",
+                name=f"Token {index}",
+                symbol=f"T{index:02d}",
+                image_url=None,
+                launched_at=f"2026-04-{index + 1:02d}T10:00:00+00:00",
+                creator=None,
+            )
+            for index in range(12)
+        ]
+    )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+    market_store.capture_token_metrics(
+        FakeDexScreenerClient(
+            {
+                f"Mint{index:02d}": [
+                    DexScreenerPair(
+                        pair_address=f"pair-{index}",
+                        dex_id="raydium",
+                        price_usd=Decimal("1"),
+                        liquidity_usd=Decimal("100"),
+                        volume_h24_usd=Decimal("10"),
+                        market_cap_usd=None if index == 11 else Decimal(str(index + 1)),
+                    )
+                ]
+                for index in range(12)
+            }
+        ),
+        captured_at="2026-04-15T12:00:00+00:00",
+    )
+
+    seeded_markets = market_store.seed_top_markets_by_market_cap(
+        amount_atomic=parse_usdc_amount("1"),
+        limit=10,
+        recorded_at="2026-04-15T13:00:00+00:00",
+    )
+
+    assert [row["mint"] for row in seeded_markets] == [
+        "Mint10",
+        "Mint09",
+        "Mint08",
+        "Mint07",
+        "Mint06",
+        "Mint05",
+        "Mint04",
+        "Mint03",
+        "Mint02",
+        "Mint01",
+    ]
+    assert market_store.get_outstanding_treasury_debt_usdc() == "10"
+
+    rerun = market_store.seed_top_markets_by_market_cap(
+        amount_atomic=parse_usdc_amount("1"),
+        limit=10,
+        recorded_at="2026-04-16T09:00:00+00:00",
+    )
+    assert rerun == []
+
+    next_week = market_store.seed_top_markets_by_market_cap(
+        amount_atomic=parse_usdc_amount("1"),
+        limit=2,
+        recorded_at="2026-04-22T09:00:00+00:00",
+    )
+    assert [row["mint"] for row in next_week] == ["Mint10", "Mint09"]
+    assert market_store.get_outstanding_treasury_debt_usdc() == "12"
+
+
+def test_record_treasury_funding_reduces_auto_seed_debt(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    catalog = Catalog(database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint="MintA",
+                name="Alpha",
+                symbol="ALPHA",
+                image_url=None,
+                launched_at="2026-04-15T10:00:00+00:00",
+                creator=None,
+            )
+        ]
+    )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+    market_store.capture_token_metrics(
+        FakeDexScreenerClient(
+            {
+                "MintA": [
+                    DexScreenerPair(
+                        pair_address="pair-a",
+                        dex_id="raydium",
+                        price_usd=Decimal("1"),
+                        liquidity_usd=Decimal("100"),
+                        volume_h24_usd=Decimal("10"),
+                        market_cap_usd=Decimal("1000"),
+                    )
+                ]
+            }
+        ),
+        captured_at="2026-04-15T12:00:00+00:00",
+    )
+
+    market_store.seed_top_markets_by_market_cap(
+        amount_atomic=parse_usdc_amount("1"),
+        limit=1,
+        recorded_at="2026-04-15T13:00:00+00:00",
+    )
+
+    funding = market_store.record_treasury_funding(
+        amount_atomic=parse_usdc_amount("0.4"),
+        funded_at="2026-04-15T14:00:00+00:00",
+    )
+    assert funding["funded_amount_usdc"] == "0.4"
+    assert funding["remaining_debt_usdc"] == "0.6"
+    assert market_store.get_outstanding_treasury_debt_usdc() == "0.6"
+
+    try:
+        market_store.record_treasury_funding(
+            amount_atomic=parse_usdc_amount("1"),
+            funded_at="2026-04-15T15:00:00+00:00",
+        )
+    except ValueError as error:
+        assert str(error) == "Treasury funding exceeds outstanding seed debt."
+    else:
+        raise AssertionError("Expected treasury overpayment to fail.")

@@ -94,6 +94,7 @@ MVP. Important current constraints:
 - `BAGS_API_KEY` in `.env` for feed ingestion
 - `secret-tool` entries for the deposit master seed and treasury seed
 - network access to Jupiter charts for hourly settlement snapshot jobs
+- network access to Jupiter token metrics for 5 minute market chart snapshot jobs
 
 ## Commands
 
@@ -103,6 +104,7 @@ MVP. Important current constraints:
 - `uv run --env-file .env python -m nukefm sync-deposits`
 - `uv run --env-file .env python -m nukefm sync-market-liquidity`
 - `uv run --env-file .env python -m nukefm sync-token-metrics`
+- `uv run --env-file .env python -m nukefm snapshot-market-charts`
 - `uv run --env-file .env python -m nukefm seed-weekly-liquidity --top 10 --amount-usdc 1`
 - `uv run --env-file .env python -m nukefm record-treasury-funding --amount-usdc 10`
 - `uv run --env-file .env python -m nukefm snapshot-markets`

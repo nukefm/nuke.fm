@@ -10,6 +10,7 @@ from nukefm.dexscreener import DexScreenerPair
 from nukefm.database import connect_database, utc_now
 from nukefm.markets import MarketStore
 from nukefm.treasury import DepositAccountAddresses
+from nukefm.weighted_pool import format_decimal, yes_price
 
 
 class FakeTreasury:
@@ -581,6 +582,160 @@ def test_current_market_serialization_uses_trailing_24h_pm_volume(tmp_path: Path
 
     token_cards = market_store.list_token_cards()
     assert token_cards[0]["current_market"]["pm_volume_24h_usdc"] == "2.5"
+
+
+def test_market_chart_snapshots_bucket_and_serialize_current_series(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    catalog = Catalog(database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint="MintChart",
+                name="Chart",
+                symbol="CHART",
+                image_url=None,
+                launched_at="2026-04-15T10:00:00+00:00",
+                creator=None,
+            )
+        ]
+    )
+
+    account_store = AccountStore(database_path)
+    account_store.initialize()
+    user = account_store.ensure_user("11111111111111111111111111111113")
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+    market_id = market_store.get_token_detail("MintChart")["current_market"]["id"]
+    market_store.record_market_liquidity_credit(
+        market_id=market_id,
+        amount_atomic=10_000_000,
+        observed_balance_after_atomic=10_000_000,
+        credited_at="2026-04-15T12:00:00+00:00",
+    )
+
+    with connect_database(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO ledger_entries (
+                user_id,
+                entry_type,
+                amount_atomic,
+                reference_type,
+                reference_id,
+                note,
+                created_at
+            )
+            VALUES (?, 'test_credit', ?, 'test', 'seed', 'Seeded test account balance.', ?)
+            """,
+            [user["id"], 20_000_000, "2026-04-15T12:01:00+00:00"],
+        )
+
+    first_capture = market_store.capture_market_chart_snapshots(
+        FakeDexScreenerClient(
+            {
+                "MintChart": [
+                    DexScreenerPair(
+                        pair_address="pair-1",
+                        dex_id="raydium",
+                        price_usd=Decimal("1.25"),
+                        liquidity_usd=Decimal("100"),
+                        volume_h24_usd=Decimal("10"),
+                        market_cap_usd=Decimal("500"),
+                    )
+                ]
+            }
+        ),
+        captured_at="2026-04-15T12:34:20+00:00",
+    )
+    market_store.execute_trade(
+        user_id=user["id"],
+        market_id=market_id,
+        outcome="yes",
+        side="buy",
+        amount_atomic=2_000_000,
+    )
+    second_capture = market_store.capture_market_chart_snapshots(
+        FakeDexScreenerClient(
+            {
+                "MintChart": [
+                    DexScreenerPair(
+                        pair_address="pair-2",
+                        dex_id="raydium",
+                        price_usd=Decimal("1.50"),
+                        liquidity_usd=Decimal("120"),
+                        volume_h24_usd=Decimal("11"),
+                        market_cap_usd=Decimal("550"),
+                    )
+                ]
+            }
+        ),
+        captured_at="2026-04-15T12:39:54+00:00",
+    )
+    with connect_database(database_path) as connection:
+        expected_chance_percent = format_decimal(yes_price(market_store._load_pool(connection, market_id)) * Decimal("100"))
+    updated_same_bucket = market_store.capture_market_chart_snapshots(
+        FakeDexScreenerClient(
+            {
+                "MintChart": [
+                    DexScreenerPair(
+                        pair_address="pair-3",
+                        dex_id="raydium",
+                        price_usd=Decimal("1.55"),
+                        liquidity_usd=Decimal("130"),
+                        volume_h24_usd=Decimal("12"),
+                        market_cap_usd=Decimal("575"),
+                    )
+                ]
+            }
+        ),
+        captured_at="2026-04-15T12:39:59+00:00",
+    )
+
+    assert first_capture == [
+        {
+            "market_id": market_id,
+            "captured_at": "2026-04-15T12:30:00+00:00",
+            "underlying_price_usd": "1.25",
+            "chance_of_outcome_percent": "50",
+        }
+    ]
+    assert second_capture == [
+        {
+            "market_id": market_id,
+            "captured_at": "2026-04-15T12:35:00+00:00",
+            "underlying_price_usd": "1.5",
+            "chance_of_outcome_percent": expected_chance_percent,
+        }
+    ]
+    assert updated_same_bucket == [
+        {
+            "market_id": market_id,
+            "captured_at": "2026-04-15T12:35:00+00:00",
+            "underlying_price_usd": "1.55",
+            "chance_of_outcome_percent": expected_chance_percent,
+        }
+    ]
+
+    token = market_store.get_token_detail("MintChart")
+    assert token is not None
+    assert token["current_market_chart"] == {
+        "market_id": market_id,
+        "interval_minutes": 5,
+        "points": [
+            {
+                "captured_at": "2026-04-15T12:30:00+00:00",
+                "underlying_price_usd": "1.25",
+                "chance_of_outcome_percent": "50",
+            },
+            {
+                "captured_at": "2026-04-15T12:35:00+00:00",
+                "underlying_price_usd": "1.55",
+                "chance_of_outcome_percent": expected_chance_percent,
+            },
+        ],
+    }
 
 
 def test_weekly_auto_seed_targets_top_market_caps_once_per_week(tmp_path: Path) -> None:

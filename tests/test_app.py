@@ -148,6 +148,21 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
                 "1.234567",
             ],
         )
+        connection.executemany(
+            """
+            INSERT INTO market_chart_snapshots (
+                market_id,
+                captured_at,
+                underlying_price_usd,
+                chance_of_outcome_percent
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                [gamma_market_id, "2026-04-15T13:05:00+00:00", "0.000000000123", "50"],
+                [gamma_market_id, "2026-04-15T13:10:00+00:00", "0.000000000140", "61.25"],
+            ],
+        )
 
     account_store = AccountStore(database_path)
     account_store.initialize()
@@ -230,12 +245,33 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert detail_api_market["underlying_market_cap_usd"] == "0.000000000321"
     assert detail_api_market["pm_volume_24h_usdc"] == "1"
     assert detail_api_market["chance_of_outcome_percent"] == "50%"
+    assert detail_api_response.json()["current_market_chart"] == {
+        "market_id": gamma_market_id,
+        "interval_minutes": 5,
+        "points": [
+            {
+                "captured_at": "2026-04-15T13:05:00+00:00",
+                "underlying_price_usd": "0.000000000123",
+                "chance_of_outcome_percent": "50",
+            },
+            {
+                "captured_at": "2026-04-15T13:10:00+00:00",
+                "underlying_price_usd": "0.00000000014",
+                "chance_of_outcome_percent": "61.25",
+            },
+        ],
+    }
 
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
     assert "Will GAMMA nuke by 90 days after this market opens?" in detail_response.text
     assert "PM 24h volume" in detail_response.text
     assert "Chance of nuke" in detail_response.text
+    assert "Token price vs chance of nuke" in detail_response.text
+    assert "snapshot-market-charts" not in detail_response.text
+    assert "token-overlay-chart" in detail_response.text
+    assert "cdn.jsdelivr.net/npm/chart.js" in detail_response.text
+    assert '"chance_of_outcome_percent": "61.25"' in detail_response.text
     assert '<p class="decision-value">50%</p>' in detail_response.text
     assert "$0.000000000123" in detail_response.text
     assert "$0.000000000321" in detail_response.text
@@ -243,6 +279,10 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert "YES Price" not in detail_response.text
     assert "NO Price" not in detail_response.text
     assert "YES and NO skew" not in detail_response.text
+
+    no_history_detail_response = client.get("/tokens/Mint111")
+    assert no_history_detail_response.status_code == 200
+    assert "No chart history yet." in no_history_detail_response.text
 
     favicon_response = client.get("/static/favicon.svg")
     assert favicon_response.status_code == 200

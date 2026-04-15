@@ -33,6 +33,7 @@ TOKEN_CARD_SORT_OPTIONS = (
     ("underlying_market_cap", "Underlying market cap"),
 )
 TOKEN_CARD_SORT_FIELDS = {value for value, _ in TOKEN_CARD_SORT_OPTIONS}
+MARKET_CHART_INTERVAL_MINUTES = 5
 
 
 class MarketStore:
@@ -150,6 +151,14 @@ class MarketStore:
                     threshold_price_usd TEXT NOT NULL,
                     captured_at TEXT NOT NULL,
                     PRIMARY KEY(market_id, snapshot_hour)
+                );
+
+                CREATE TABLE IF NOT EXISTS market_chart_snapshots (
+                    market_id INTEGER NOT NULL REFERENCES markets(id) ON DELETE CASCADE,
+                    captured_at TEXT NOT NULL,
+                    underlying_price_usd TEXT NOT NULL,
+                    chance_of_outcome_percent TEXT NOT NULL,
+                    PRIMARY KEY(market_id, captured_at)
                 );
 
                 CREATE TABLE IF NOT EXISTS token_metrics_snapshots (
@@ -280,6 +289,66 @@ class MarketStore:
 
             return captured_rows
 
+    def capture_market_chart_snapshots(
+        self,
+        metrics_client: DexScreenerPairClient,
+        *,
+        captured_at: str | None = None,
+    ) -> list[dict]:
+        snapshot_time = self._chart_snapshot_time(captured_at or utc_now()).isoformat()
+
+        with connect_database(self._database_path) as connection:
+            captured_rows: list[dict] = []
+            for row in self._list_current_market_rows(connection):
+                if row["state"] not in {"open", "halted"}:
+                    continue
+
+                pool = self._load_pool(connection, row["id"], required=False)
+                if pool is None:
+                    raise ValueError(f"Market {row['id']} is {row['state']} but has no active pool.")
+
+                price_pair = self._most_liquid_pair_with_price(metrics_client.list_token_pairs(row["mint"]))
+                if price_pair is None or price_pair.price_usd is None:
+                    logger.warning(
+                        "Skipping chart snapshot for market {} ({}) at {} because the current token price is unavailable.",
+                        row["id"],
+                        row["mint"],
+                        snapshot_time,
+                    )
+                    continue
+
+                chance_of_outcome_percent = yes_price(pool) * Decimal("100")
+                connection.execute(
+                    """
+                    INSERT INTO market_chart_snapshots (
+                        market_id,
+                        captured_at,
+                        underlying_price_usd,
+                        chance_of_outcome_percent
+                    )
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(market_id, captured_at) DO UPDATE SET
+                        underlying_price_usd = excluded.underlying_price_usd,
+                        chance_of_outcome_percent = excluded.chance_of_outcome_percent
+                    """,
+                    [
+                        row["id"],
+                        snapshot_time,
+                        str(price_pair.price_usd),
+                        str(chance_of_outcome_percent),
+                    ],
+                )
+                captured_rows.append(
+                    {
+                        "market_id": row["id"],
+                        "captured_at": snapshot_time,
+                        "underlying_price_usd": format_decimal(price_pair.price_usd),
+                        "chance_of_outcome_percent": format_decimal(chance_of_outcome_percent),
+                    }
+                )
+
+            return captured_rows
+
     def get_token_detail(self, mint: str) -> dict | None:
         with connect_database(self._database_path) as connection:
             token_row = connection.execute(
@@ -340,6 +409,7 @@ class MarketStore:
                     )
                     for row in past_market_rows
                 ],
+                "current_market_chart": self._serialize_current_market_chart(connection, current_market),
                 "recent_activity": self._recent_activity(connection, current_market, token_row["updated_at"]),
             }
 
@@ -1416,6 +1486,20 @@ class MarketStore:
     def _chance_of_outcome_percent(yes_price_value: Decimal) -> str:
         return f"{format_decimal(yes_price_value * Decimal('100'))}%"
 
+    def _serialize_current_market_chart(self, connection: sqlite3.Connection, current_market: sqlite3.Row) -> dict:
+        return {
+            "market_id": current_market["id"],
+            "interval_minutes": MARKET_CHART_INTERVAL_MINUTES,
+            "points": [
+                {
+                    "captured_at": row["captured_at"],
+                    "underlying_price_usd": format_decimal(parse_decimal(row["underlying_price_usd"])),
+                    "chance_of_outcome_percent": format_decimal(parse_decimal(row["chance_of_outcome_percent"])),
+                }
+                for row in self._market_chart_rows(connection, current_market["id"])
+            ],
+        }
+
     @staticmethod
     def _sort_token_cards(token_cards: list[dict], *, sort_by: str, sort_direction: str) -> None:
         if sort_by not in TOKEN_CARD_SORT_FIELDS:
@@ -1549,6 +1633,13 @@ class MarketStore:
         return max(eligible_pairs, key=lambda pair: pair.liquidity_usd)
 
     @staticmethod
+    def _most_liquid_pair_with_price(pairs: list[DexScreenerPair]) -> DexScreenerPair | None:
+        eligible_pairs = [pair for pair in pairs if pair.price_usd is not None]
+        if not eligible_pairs:
+            return None
+        return max(eligible_pairs, key=lambda pair: pair.liquidity_usd)
+
+    @staticmethod
     def _list_current_market_rows(connection: sqlite3.Connection) -> list[sqlite3.Row]:
         return connection.execute(
             """
@@ -1611,6 +1702,18 @@ class MarketStore:
             """,
             [token_mint],
         ).fetchone()
+
+    @staticmethod
+    def _market_chart_rows(connection: sqlite3.Connection, market_id: int) -> list[sqlite3.Row]:
+        return connection.execute(
+            """
+            SELECT captured_at, underlying_price_usd, chance_of_outcome_percent
+            FROM market_chart_snapshots
+            WHERE market_id = ?
+            ORDER BY captured_at ASC
+            """,
+            [market_id],
+        ).fetchall()
 
     def _load_tradeable_market(self, connection: sqlite3.Connection, market_id: int) -> sqlite3.Row:
         row = connection.execute(
@@ -1893,6 +1996,12 @@ class MarketStore:
     def _snapshot_hour(timestamp: datetime | str) -> datetime:
         dt = timestamp if isinstance(timestamp, datetime) else MarketStore._parse_timestamp(timestamp)
         return dt.replace(minute=0, second=0, microsecond=0)
+
+    @staticmethod
+    def _chart_snapshot_time(timestamp: datetime | str) -> datetime:
+        dt = timestamp if isinstance(timestamp, datetime) else MarketStore._parse_timestamp(timestamp)
+        minute_bucket = (dt.minute // MARKET_CHART_INTERVAL_MINUTES) * MARKET_CHART_INTERVAL_MINUTES
+        return dt.replace(minute=minute_bucket, second=0, microsecond=0)
 
     @staticmethod
     def _parse_timestamp(timestamp: str) -> datetime:

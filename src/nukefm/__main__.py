@@ -35,6 +35,7 @@ def main() -> None:
     subparsers.add_parser("sync-market-liquidity")
     subparsers.add_parser("sync-token-metrics")
     subparsers.add_parser("snapshot-markets")
+    subparsers.add_parser("snapshot-market-charts")
     subparsers.add_parser("resolve-markets")
 
     seed_weekly_liquidity_parser = subparsers.add_parser("seed-weekly-liquidity")
@@ -116,6 +117,13 @@ def main() -> None:
             JupiterChartsSettlementPriceClient(),
         )
         logger.info(f"Captured {len(snapshots)} market snapshot updates.")
+        return
+
+    if arguments.command == "snapshot-market-charts":
+        snapshots = market_store.capture_market_chart_snapshots(
+            JupiterTokensClient(base_url=settings.jupiter_tokens_base_url),
+        )
+        logger.info(f"Captured {len(snapshots)} market chart snapshot updates.")
         return
 
     if arguments.command == "resolve-markets":

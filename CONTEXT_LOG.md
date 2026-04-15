@@ -69,3 +69,8 @@
 - The rolling 24h settlement median is intentionally not clipped to `market_start`. Early snapshots should reflect the full trailing underlying-token median, including pre-market trading, so the series opens against a real 24h context instead of an artificially shortened window.
 - Jupiter charts do not currently emit empty carry-forward candles for quiet periods. When a finalized hour has no candles in-range, the snapshot layer explicitly carries forward the last known price at or before that hour end.
 - Market-liquidity account creation is now retried on Solana RPC `429` responses, and the bulk account-creation path prioritizes already-open markets first so the frontend-visible seeded markets recover before the long tail of awaiting-liquidity markets.
+
+## Token Detail Charting
+
+- The token detail overlay chart uses its own `market_chart_snapshots` table and operator job instead of reusing hourly settlement snapshots. That separation is intentional: the chart is a 5-minute trader-facing read, while hourly settlement snapshots remain the canonical resolution/reference path.
+- Each chart row stores both the current token USD price and the current market `YES` probability at the same bucketed timestamp so the frontend can render one aligned dual-axis overlay without stitching together mismatched histories at read time.

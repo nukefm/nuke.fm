@@ -2,6 +2,7 @@
 
 {% block content %}
 {% set market = token.current_market %}
+{% set chart = token.current_market_chart %}
 {% if market.state == "awaiting_liquidity" %}
   {% set trader_state = "Signal waiting on seed" %}
   {% set trader_state_note = "The PM is not actionable yet. The first funded liquidity deposit starts the 90 day clock and live pricing." %}
@@ -96,6 +97,26 @@
     <span>Mint</span>
     <code>{{ token.mint }}</code>
   </div>
+</section>
+
+<section class="detail-card chart-card">
+  <div class="detail-section-heading">
+    <div>
+      <p class="eyebrow">Overlay</p>
+      <h2>Token price vs chance of nuke</h2>
+    </div>
+    <p class="section-copy">Aligned 5 minute snapshots for the current series, with separate axes for price and market signal.</p>
+  </div>
+  {% if chart.points %}
+  <div class="chart-shell">
+    <canvas id="token-overlay-chart" aria-label="Token price and chance of nuke chart" role="img"></canvas>
+  </div>
+  {% if chart.points|length == 1 %}
+  <p class="availability-note">Only one chart point is available so far. The overlay will become readable as the 5 minute snapshot job fills in more history.</p>
+  {% endif %}
+  {% else %}
+  <p class="availability-note">No chart history yet. Run the 5 minute `snapshot-market-charts` job after the market is live to populate this overlay.</p>
+  {% endif %}
 </section>
 
 <section class="detail-layout detail-layout-balanced">
@@ -249,6 +270,132 @@
   <p class="availability-note">No resolved markets yet.</p>
   {% endif %}
 </section>
+
+{% if chart.points %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+  const chartPayload = {{ chart | tojson }};
+  const chartCanvas = document.getElementById("token-overlay-chart");
+
+  if (chartCanvas && window.Chart) {
+    const numberFormatter = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 8,
+    });
+    const formatUsd = (value) => {
+      const absoluteValue = Math.abs(value);
+      const maximumFractionDigits = absoluteValue !== 0 && absoluteValue < 0.01 ? 12 : 4;
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 0,
+        maximumFractionDigits,
+      }).format(value);
+    };
+    const overlayPoints = chartPayload.points;
+
+    new Chart(chartCanvas, {
+      type: "line",
+      data: {
+        labels: overlayPoints.map((point) => point.captured_at),
+        datasets: [
+          {
+            label: "Token price",
+            data: overlayPoints.map((point) => Number(point.underlying_price_usd)),
+            yAxisID: "price",
+            borderColor: "#215c3b",
+            backgroundColor: "rgba(33, 92, 59, 0.14)",
+            borderWidth: 2,
+            pointRadius: overlayPoints.length > 1 ? 0 : 3,
+            pointHoverRadius: 4,
+            tension: 0.22,
+          },
+          {
+            label: "Chance of nuke",
+            data: overlayPoints.map((point) => Number(point.chance_of_outcome_percent)),
+            yAxisID: "chance",
+            borderColor: "#bf5a31",
+            backgroundColor: "rgba(191, 90, 49, 0.14)",
+            borderWidth: 2,
+            pointRadius: overlayPoints.length > 1 ? 0 : 3,
+            pointHoverRadius: 4,
+            tension: 0.22,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: "index",
+          intersect: false,
+        },
+        plugins: {
+          legend: {
+            position: "bottom",
+            labels: {
+              usePointStyle: true,
+              boxWidth: 10,
+              color: "#17231c",
+            },
+          },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                if (context.dataset.yAxisID === "chance") {
+                  return `${context.dataset.label}: ${numberFormatter.format(context.parsed.y)}%`;
+                }
+                return `${context.dataset.label}: ${formatUsd(context.parsed.y)}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: {
+              color: "rgba(23, 35, 28, 0.05)",
+            },
+            ticks: {
+              color: "#5f6a61",
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 6,
+            },
+          },
+          price: {
+            type: "linear",
+            position: "left",
+            grid: {
+              color: "rgba(33, 92, 59, 0.08)",
+            },
+            ticks: {
+              color: "#215c3b",
+              callback(value) {
+                return formatUsd(value);
+              },
+            },
+          },
+          chance: {
+            type: "linear",
+            position: "right",
+            min: 0,
+            max: 100,
+            grid: {
+              drawOnChartArea: false,
+            },
+            ticks: {
+              color: "#bf5a31",
+              callback(value) {
+                return `${numberFormatter.format(value)}%`;
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+</script>
+{% endif %}
 
 <script>
   document.querySelectorAll("[data-copy]").forEach((button) => {

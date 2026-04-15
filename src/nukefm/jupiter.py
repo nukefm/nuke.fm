@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from time import sleep
 
 import requests
 
@@ -11,14 +12,36 @@ class JupiterTokensClient:
     def __init__(self, *, base_url: str) -> None:
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
-        self._session.headers.update({"accept": "application/json"})
+        self._session.headers.update(
+            {
+                "accept": "application/json",
+                "origin": "https://jup.ag",
+                "referer": "https://jup.ag/",
+                "user-agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+                ),
+            }
+        )
 
     def list_token_pairs(self, token_mint: str) -> list[DexScreenerPair]:
-        response = self._session.get(
-            f"{self._base_url}/search",
-            params={"query": token_mint, "limit": 3},
-            timeout=15,
-        )
+        response = None
+        for attempt in range(4):
+            response = self._session.get(
+                f"{self._base_url}/search",
+                params={"query": token_mint, "limit": 3},
+                timeout=15,
+            )
+            if response.status_code != 429:
+                break
+
+            retry_after = response.headers.get("retry-after")
+            backoff_seconds = 1 if retry_after is None else max(int(retry_after), 1)
+            sleep(backoff_seconds * (attempt + 1))
+
+        if response is None:
+            raise RuntimeError("Jupiter token metrics request did not execute.")
+
         response.raise_for_status()
 
         for row in response.json():

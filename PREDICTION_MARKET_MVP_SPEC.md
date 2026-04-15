@@ -21,37 +21,38 @@ The canonical identifier is the token mint address. Symbol and name are display 
 
 ### Definition Of Rugged
 
-Use a definition based on sustained inactivity, not price.
+Use a definition based on price collapse from post-launch ATH.
 
 User-facing definition:
 
-- `Rugged` means the token stayed below minimum trading activity for two straight weeks.
+- `Rugged` means the token fell more than 95% from its all-time high within 90 days of launch.
 
 Formal rule:
 
-- Resolve `YES` if, before expiry, both conditions below hold for 14 consecutive UTC days.
-- Combined 24h trading volume across tracked Solana pairs is below `$5,000`.
-- Combined end-of-day liquidity across tracked Solana pairs is below `$10,000`.
-- Resolve `NO` if that never happens by expiry.
+- Define `reference price` as the liquidity-weighted average token price across tracked Solana pairs at each hourly snapshot.
+- Define `ATH` as the highest recorded reference price between market open and expiry.
+- Resolve `YES` if, at any later hourly snapshot before expiry, the reference price is at or below `5%` of `ATH`.
+- Resolve `NO` at expiry otherwise.
 
 Why this rule:
 
 - It is easy to explain.
-- It matches the practical meaning of a dead token better than price alone.
+- It matches how traders talk about a token being destroyed.
 - It resolves inside a useful time window instead of asking a question that becomes trivial over a long horizon.
+- It uses hourly aggregated prices rather than raw wick highs, which makes settlement less sensitive to one bad trade.
 
 ### Pair Tracking
 
 - Track all supported Solana trading pairs for the token.
-- Aggregate volume and liquidity across those pairs.
+- Compute the reference price from the tracked pair set, not from a single pool.
 - Resolve from the tracked set, not from a single pool.
 
 ### Resolution Source
 
 - Detect token launches from the Bags launch feed.
-- Ingest token market data on a fixed schedule.
+- Ingest token price and pair-liquidity data on a fixed schedule.
 - Store hourly snapshots in an append-only settlement table.
-- Build daily UTC rollups from stored snapshots.
+- Compute the reference price and running ATH from stored snapshots.
 - Resolve markets from stored data, not a live API call at resolution time.
 
 ## Trading Model
@@ -111,9 +112,9 @@ The spec does not require fixed position caps or other arbitrary exposure rules.
 
 ### Settlement
 
-- Resolution job evaluates daily rollups.
-- A market resolves `YES` as soon as the 14 day streak completes.
-- A market resolves `NO` at expiry if no such streak occurred.
+- Resolution job evaluates hourly snapshots.
+- A market resolves `YES` as soon as post-ATH drawdown reaches at least 95%.
+- A market resolves `NO` at expiry if that never happens.
 - Backend generates payout ledger entries.
 - User balance and portfolio update immediately after settlement.
 
@@ -129,8 +130,8 @@ Include:
 
 - active markets
 - rug probability
+- current drawdown from ATH
 - expiry countdown
-- latest liquidity and volume
 - token search
 - filters for `new`, `active`, `expiring`, and `resolved`
 
@@ -147,8 +148,9 @@ Include:
 - buy and sell ticket for `YES` and `NO`
 - user's current position
 - recent market activity
-- token price, volume, and liquidity charts
-- current rug-condition streak
+- token price chart
+- ATH and ATH timestamp
+- current drawdown from ATH
 - plain-English settlement rule
 
 #### Portfolio
@@ -248,8 +250,9 @@ Important cases:
 #### Resolution
 
 - metric snapshot ingestion
-- daily rollups
-- rug-condition evaluation
+- reference price calculation
+- ATH tracking
+- drawdown evaluation
 - market resolution
 - payout generation
 
@@ -271,8 +274,7 @@ The backend needs, at minimum:
 - accounts and balances
 - markets
 - tracked pairs per market
-- hourly metric snapshots
-- daily rollups
+- hourly market snapshots
 - positions
 - trades
 - ledger entries
@@ -372,7 +374,7 @@ The MVP does not need:
 ### Then
 
 - metric ingestion
-- daily rollups
+- reference price calculation and ATH tracking
 - resolution engine
 - payout settlement
 - admin surface
@@ -381,5 +383,5 @@ The MVP does not need:
 ## Open Questions
 
 - Should trading open immediately at token launch, or only after pair discovery is confirmed?
-- Should `rugged` remain the public term, or should the product use a softer label such as `inactive` while keeping the same rule?
+- Should `rugged` remain the public term, or should the product use a more literal label such as `down 95% from ATH` while keeping the same rule?
 - Should the platform launch with only new Bags tokens, or also backfill older tokens into fresh 90 day markets?

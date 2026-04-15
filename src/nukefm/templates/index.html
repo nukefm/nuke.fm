@@ -82,18 +82,48 @@
         <dd>{{ token.current_market.sequence_number }}</dd>
       </div>
       <div>
-        <dt>Launch Feed</dt>
-        <dd>{{ token.launched_at or "Unavailable" }}</dd>
+        <dt>YES</dt>
+        <dd>{{ token.current_market.yes_price_usd or "Awaiting liquidity" }}</dd>
       </div>
       <div>
-        <dt>Market Start</dt>
-        <dd>{{ token.current_market.market_start or "Awaiting liquidity" }}</dd>
+        <dt>NO</dt>
+        <dd>{{ token.current_market.no_price_usd or "Awaiting liquidity" }}</dd>
+      </div>
+      <div>
+        <dt>Reference</dt>
+        <dd>{{ token.current_market.reference_price_usd or "Not snapped yet" }}</dd>
+      </div>
+      <div>
+        <dt>ATH</dt>
+        <dd>{{ token.current_market.ath_price_usd or "Not snapped yet" }}</dd>
+      </div>
+      <div>
+        <dt>Drawdown</dt>
+        <dd>{{ token.current_market.drawdown_fraction or "Not snapped yet" }}</dd>
+      </div>
+      <div>
+        <dt>Threshold</dt>
+        <dd>{{ token.current_market.threshold_price_usd or "Not snapped yet" }}</dd>
       </div>
       <div>
         <dt>Expiry</dt>
         <dd>{{ token.current_market.expiry or "Not started" }}</dd>
       </div>
+      <div>
+        <dt>Liquidity</dt>
+        <dd>{{ token.current_market.total_liquidity_usdc or "0" }}</dd>
+      </div>
     </dl>
+    <p class="market-mint">
+      <span>Liquidity Deposit</span>
+      <code title="{{ token.current_market.liquidity_deposit_address or 'Unassigned' }}">
+        {% if token.current_market.liquidity_deposit_address %}
+          {{ token.current_market.liquidity_deposit_address[:10] }}...{{ token.current_market.liquidity_deposit_address[-8:] }}
+        {% else %}
+          Unassigned
+        {% endif %}
+      </code>
+    </p>
     <div class="market-card-footer">
       <span>Token detail</span>
       <span class="arrow">→</span>

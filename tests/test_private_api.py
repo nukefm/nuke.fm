@@ -23,6 +23,12 @@ class FakeTreasury:
             token_account_address=f"deposit-{user_id}",
         )
 
+    def ensure_market_liquidity_account(self, market_id: int) -> DepositAccountAddresses:
+        return DepositAccountAddresses(
+            owner_wallet_address=f"market-owner-{market_id}",
+            token_account_address=f"market-deposit-{market_id}",
+        )
+
     def set_balance(self, token_account_address: str, amount_atomic: int) -> None:
         self._balances[token_account_address] = amount_atomic
 
@@ -62,6 +68,41 @@ class FakeTreasury:
             processed.append({"withdrawal_id": withdrawal["id"], "state": "completed"})
         return processed
 
+    def reconcile_market_liquidity(self, market_store) -> list[dict]:
+        credited = []
+        for deposit_account in market_store.list_market_liquidity_accounts():
+            current_balance = self._balances.get(
+                deposit_account["token_account_address"],
+                deposit_account["observed_balance_atomic"],
+            )
+            observed_balance = deposit_account["observed_balance_atomic"]
+            if current_balance < observed_balance:
+                raise RuntimeError("Market liquidity balance cannot move backwards in the fake treasury.")
+            if current_balance == observed_balance:
+                continue
+            credited.append(
+                market_store.record_market_liquidity_credit(
+                    market_id=deposit_account["market_id"],
+                    amount_atomic=current_balance - observed_balance,
+                    observed_balance_after_atomic=current_balance,
+                    credited_at="2026-04-15T12:31:00+00:00",
+                )
+            )
+        return credited
+
+    def sweep_market_revenue(self, market_store, *, limit: int) -> list[dict]:
+        processed = []
+        for sweep in market_store.list_pending_revenue_sweeps(limit=limit):
+            market_store.mark_revenue_sweep_completed(
+                market_id=sweep["market_id"],
+                destination_token_account_address="treasury-ata",
+                onchain_amount_atomic=0,
+                broadcast_signature=f"sweep-{sweep['market_id']}",
+                completed_at="2026-04-15T18:00:00+00:00",
+            )
+            processed.append({"market_id": sweep["market_id"], "state": "completed"})
+        return processed
+
 
 def _make_settings(tmp_path: Path) -> Settings:
     return Settings(
@@ -70,9 +111,12 @@ def _make_settings(tmp_path: Path) -> Settings:
         log_path=tmp_path / "logs" / "app.log",
         frontend_refresh_seconds=30,
         api_challenge_ttl_seconds=300,
+        market_duration_days=90,
+        market_threshold_fraction="0.05",
         bags_base_url="https://public-api-v2.bags.fm/api/v1",
         bags_launch_feed_path="/token-launch/feed",
         bags_api_key=None,
+        dexscreener_base_url="https://api.dexscreener.com",
         solana_rpc_url="https://api.mainnet-beta.solana.com",
         solana_usdc_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         secret_tool_service="nuke.fm",
@@ -140,12 +184,60 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     deposit_address = deposit_address_response.json()["deposit_address"]
     assert deposit_address == "deposit-1"
 
+    token_list_response = client.get("/v1/public/tokens")
+    market_id = token_list_response.json()["tokens"][0]["current_market"]["id"]
+    market_deposit_address = token_list_response.json()["tokens"][0]["current_market"]["liquidity_deposit_address"]
+    assert market_deposit_address == f"market-deposit-{market_id}"
+    treasury.set_balance(market_deposit_address, parse_usdc_amount("20"))
+    market_credited = treasury.reconcile_market_liquidity(app.state.market_store)
+    assert market_credited[0]["amount_usdc"] == "20"
+
     treasury.set_balance(deposit_address, parse_usdc_amount("12.5"))
     credited = treasury.reconcile_deposits(account_store)
     assert credited[0]["amount_usdc"] == "12.5"
 
     updated_account_response = client.get("/v1/private/account", headers=headers)
     assert updated_account_response.json()["account_balance_usdc"] == "12.5"
+
+    buy_quote_response = client.post(
+        "/v1/private/trades/quote",
+        headers=headers,
+        json={"market_id": market_id, "outcome": "yes", "side": "buy", "amount_usdc": "3"},
+    )
+    assert buy_quote_response.status_code == 200
+    assert buy_quote_response.json()["share_amount"] != "0"
+
+    buy_trade_response = client.post(
+        "/v1/private/trades",
+        headers=headers,
+        json={"market_id": market_id, "outcome": "yes", "side": "buy", "amount_usdc": "3"},
+    )
+    assert buy_trade_response.status_code == 200
+    assert buy_trade_response.json()["amount_usdc"] == "3"
+
+    positions_response = client.get("/v1/private/account/positions", headers=headers)
+    assert positions_response.status_code == 200
+    assert positions_response.json()["positions"][0]["yes_shares"] != "0"
+
+    sell_quote_response = client.post(
+        "/v1/private/trades/quote",
+        headers=headers,
+        json={"market_id": market_id, "outcome": "yes", "side": "sell", "amount_usdc": "1"},
+    )
+    assert sell_quote_response.status_code == 200
+    assert sell_quote_response.json()["share_amount"] != "0"
+
+    sell_trade_response = client.post(
+        "/v1/private/trades",
+        headers=headers,
+        json={"market_id": market_id, "outcome": "yes", "side": "sell", "amount_usdc": "1"},
+    )
+    assert sell_trade_response.status_code == 200
+    assert sell_trade_response.json()["amount_usdc"] == "1"
+
+    trades_response = client.get("/v1/private/account/trades", headers=headers)
+    assert trades_response.status_code == 200
+    assert len(trades_response.json()["trades"]) == 2
 
     deposits_response = client.get("/v1/private/account/deposits", headers=headers)
     assert deposits_response.status_code == 200
@@ -160,7 +252,7 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     assert withdrawal_response.json()["amount_usdc"] == "2.25"
 
     held_balance_response = client.get("/v1/private/account", headers=headers)
-    assert held_balance_response.json()["account_balance_usdc"] == "10.25"
+    assert held_balance_response.json()["account_balance_usdc"] == "8.25"
     assert held_balance_response.json()["pending_withdrawal_usdc"] == "2.25"
 
     processed = treasury.process_withdrawals(account_store, limit=10)
@@ -171,10 +263,9 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     assert withdrawals_response.json()["withdrawals"][0]["state"] == "completed"
 
     settled_account_response = client.get("/v1/private/account", headers=headers)
-    assert settled_account_response.json()["account_balance_usdc"] == "10.25"
+    assert settled_account_response.json()["account_balance_usdc"] == "8.25"
     assert settled_account_response.json()["pending_withdrawal_usdc"] == "0"
 
     portfolio_response = client.get("/v1/private/account/portfolio", headers=headers)
     assert portfolio_response.status_code == 200
-    assert portfolio_response.json()["open_positions"] == []
-    assert portfolio_response.json()["trade_history"] == []
+    assert len(portfolio_response.json()["trade_history"]) == 2

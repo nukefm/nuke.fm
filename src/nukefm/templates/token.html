@@ -59,6 +59,38 @@
         <dt>Liquidity Deposit Address</dt>
         <dd>{{ token.current_market.liquidity_deposit_address or "Not assigned yet" }}</dd>
       </div>
+      <div>
+        <dt>YES Price</dt>
+        <dd>{{ token.current_market.yes_price_usd or "Awaiting liquidity" }}</dd>
+      </div>
+      <div>
+        <dt>NO Price</dt>
+        <dd>{{ token.current_market.no_price_usd or "Awaiting liquidity" }}</dd>
+      </div>
+      <div>
+        <dt>Reference</dt>
+        <dd>{{ token.current_market.reference_price_usd or "No snapshots yet" }}</dd>
+      </div>
+      <div>
+        <dt>ATH</dt>
+        <dd>{{ token.current_market.ath_price_usd or "No snapshots yet" }}</dd>
+      </div>
+      <div>
+        <dt>ATH Timestamp</dt>
+        <dd>{{ token.current_market.ath_timestamp or "No snapshots yet" }}</dd>
+      </div>
+      <div>
+        <dt>Drawdown</dt>
+        <dd>{{ token.current_market.drawdown_fraction or "No snapshots yet" }}</dd>
+      </div>
+      <div>
+        <dt>Threshold</dt>
+        <dd>{{ token.current_market.threshold_price_usd or "No snapshots yet" }}</dd>
+      </div>
+      <div>
+        <dt>Total Liquidity</dt>
+        <dd>{{ token.current_market.total_liquidity_usdc or "0" }}</dd>
+      </div>
     </dl>
   </article>
 

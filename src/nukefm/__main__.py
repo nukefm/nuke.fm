@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from decimal import Decimal
 
 import uvicorn
 from loguru import logger
@@ -10,7 +11,9 @@ from .app import create_app
 from .bags import BagsClient
 from .catalog import Catalog
 from .config import load_settings
+from .dexscreener import DexScreenerClient
 from .logging_utils import configure_logging
+from .markets import MarketStore
 from .treasury import SolanaTreasury
 
 
@@ -26,6 +29,9 @@ def main() -> None:
     ingest_parser.add_argument("--limit", type=int, default=100)
 
     subparsers.add_parser("sync-deposits")
+    subparsers.add_parser("sync-market-liquidity")
+    subparsers.add_parser("snapshot-markets")
+    subparsers.add_parser("resolve-markets")
 
     process_withdrawals_parser = subparsers.add_parser("process-withdrawals")
     process_withdrawals_parser.add_argument("--limit", type=int, default=100)
@@ -42,29 +48,46 @@ def main() -> None:
     catalog.initialize()
     account_store = AccountStore(settings.database_path)
     account_store.initialize()
+    market_store = MarketStore(
+        settings.database_path,
+        market_duration_days=settings.market_duration_days,
+        threshold_fraction=Decimal(settings.market_threshold_fraction),
+    )
+    market_store.initialize()
+    treasury = SolanaTreasury(
+        rpc_url=settings.solana_rpc_url,
+        usdc_mint=settings.solana_usdc_mint,
+        secret_tool_service=settings.secret_tool_service,
+        deposit_master_seed_secret_name=settings.deposit_master_seed_secret_name,
+        treasury_seed_secret_name=settings.treasury_seed_secret_name,
+    )
 
     if arguments.command == "sync-deposits":
-        treasury = SolanaTreasury(
-            rpc_url=settings.solana_rpc_url,
-            usdc_mint=settings.solana_usdc_mint,
-            secret_tool_service=settings.secret_tool_service,
-            deposit_master_seed_secret_name=settings.deposit_master_seed_secret_name,
-            treasury_seed_secret_name=settings.treasury_seed_secret_name,
-        )
         credited_deposits = treasury.reconcile_deposits(account_store)
         logger.info(f"Credited {len(credited_deposits)} deposit balance changes.")
         return
 
+    if arguments.command == "sync-market-liquidity":
+        market_store.ensure_missing_market_liquidity_accounts(treasury)
+        credited_deposits = treasury.reconcile_market_liquidity(market_store)
+        logger.info(f"Credited {len(credited_deposits)} market liquidity balance changes.")
+        return
+
     if arguments.command == "process-withdrawals":
-        treasury = SolanaTreasury(
-            rpc_url=settings.solana_rpc_url,
-            usdc_mint=settings.solana_usdc_mint,
-            secret_tool_service=settings.secret_tool_service,
-            deposit_master_seed_secret_name=settings.deposit_master_seed_secret_name,
-            treasury_seed_secret_name=settings.treasury_seed_secret_name,
-        )
         processed_withdrawals = treasury.process_withdrawals(account_store, limit=arguments.limit)
         logger.info(f"Processed {len(processed_withdrawals)} withdrawals.")
+        return
+
+    if arguments.command == "snapshot-markets":
+        snapshots = market_store.capture_hourly_snapshots(
+            DexScreenerClient(base_url=settings.dexscreener_base_url),
+        )
+        logger.info(f"Captured {len(snapshots)} market snapshot updates.")
+        return
+
+    if arguments.command == "resolve-markets":
+        resolved = market_store.resolve_markets(catalog=catalog, treasury=treasury)
+        logger.info(f"Resolved {len(resolved)} markets.")
         return
 
     if settings.bags_api_key is None:
@@ -76,6 +99,7 @@ def main() -> None:
         api_key=settings.bags_api_key,
     )
     ingested_count = catalog.ingest_tokens(client.list_tokens(limit=arguments.limit))
+    market_store.ensure_missing_market_liquidity_accounts(treasury)
     logger.info(f"Ingested {ingested_count} Bags tokens into the market catalog.")
 
 

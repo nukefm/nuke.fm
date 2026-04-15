@@ -43,32 +43,22 @@ class SolanaTreasury:
             self._load_seed_bytes(secret_name=treasury_seed_secret_name),
         )
         self._treasury_wallet = self._treasury_keypair.pubkey()
+        self._treasury_token_account = get_associated_token_address(self._treasury_wallet, self._usdc_mint)
 
     def ensure_user_deposit_account(self, user_id: int) -> DepositAccountAddresses:
-        deposit_owner = self._derive_user_owner_keypair(user_id).pubkey()
-        token_account = get_associated_token_address(deposit_owner, self._usdc_mint)
-        if self._client.get_account_info(token_account).value is None:
-            self._send_instructions(
-                [
-                    create_associated_token_account(
-                        payer=self._treasury_wallet,
-                        owner=deposit_owner,
-                        mint=self._usdc_mint,
-                    )
-                ]
-            )
+        return self._ensure_derived_token_account(
+            owner_keypair=self._derive_user_owner_keypair(user_id),
+        )
 
-        return DepositAccountAddresses(
-            owner_wallet_address=str(deposit_owner),
-            token_account_address=str(token_account),
+    def ensure_market_liquidity_account(self, market_id: int) -> DepositAccountAddresses:
+        return self._ensure_derived_token_account(
+            owner_keypair=self._derive_market_owner_keypair(market_id),
         )
 
     def reconcile_deposits(self, account_store: AccountStore) -> list[dict]:
         credited_deposits: list[dict] = []
         for deposit_account in account_store.list_deposit_accounts():
-            token_account = Pubkey.from_string(deposit_account["token_account_address"])
-            response = self._client.get_token_account_balance(token_account)
-            onchain_balance_atomic = int(response.value.amount)
+            onchain_balance_atomic = self.get_token_account_balance(deposit_account["token_account_address"])
             observed_balance_atomic = deposit_account["observed_balance_atomic"]
 
             if onchain_balance_atomic < observed_balance_atomic:
@@ -91,6 +81,29 @@ class SolanaTreasury:
                 )
             )
 
+        return credited_deposits
+
+    def reconcile_market_liquidity(self, market_store) -> list[dict]:
+        credited_deposits: list[dict] = []
+        for deposit_account in market_store.list_market_liquidity_accounts():
+            onchain_balance_atomic = self.get_token_account_balance(deposit_account["token_account_address"])
+            observed_balance_atomic = deposit_account["observed_balance_atomic"]
+            if onchain_balance_atomic < observed_balance_atomic:
+                raise RuntimeError(
+                    "Observed on-chain market liquidity balance dropped below the last credited balance. "
+                    f"Token account: {deposit_account['token_account_address']}"
+                )
+            delta_atomic = onchain_balance_atomic - observed_balance_atomic
+            if delta_atomic == 0:
+                continue
+            credited_deposits.append(
+                market_store.record_market_liquidity_credit(
+                    market_id=deposit_account["market_id"],
+                    amount_atomic=delta_atomic,
+                    observed_balance_after_atomic=onchain_balance_atomic,
+                    credited_at=utc_now(),
+                )
+            )
         return credited_deposits
 
     def process_withdrawals(self, account_store: AccountStore, *, limit: int) -> list[dict]:
@@ -155,7 +168,7 @@ class SolanaTreasury:
                     )
                 )
 
-                signature = self._send_instructions(instructions)
+                signature = self._send_instructions(instructions, signers=[self._treasury_keypair])
                 account_store.mark_withdrawal_broadcasted(
                     withdrawal_id=withdrawal["id"],
                     destination_token_account_address=str(destination_token_account),
@@ -182,12 +195,119 @@ class SolanaTreasury:
 
         return processed_withdrawals
 
+    def sweep_market_revenue(self, market_store, *, limit: int) -> list[dict]:
+        processed_sweeps: list[dict] = []
+        self._ensure_associated_token_account(owner=self._treasury_wallet)
+
+        for sweep in market_store.list_pending_revenue_sweeps(limit=limit):
+            try:
+                source_token_account = sweep["source_token_account_address"]
+                if source_token_account is None:
+                    market_store.mark_revenue_sweep_completed(
+                        market_id=sweep["market_id"],
+                        destination_token_account_address=str(self._treasury_token_account),
+                        onchain_amount_atomic=0,
+                        broadcast_signature="recorded-only",
+                        completed_at=utc_now(),
+                    )
+                    processed_sweeps.append({"market_id": sweep["market_id"], "state": "completed", "onchain_amount_usdc": "0"})
+                    continue
+
+                onchain_amount_atomic = self.get_token_account_balance(source_token_account)
+                if onchain_amount_atomic == 0:
+                    market_store.mark_revenue_sweep_completed(
+                        market_id=sweep["market_id"],
+                        destination_token_account_address=str(self._treasury_token_account),
+                        onchain_amount_atomic=0,
+                        broadcast_signature="empty-balance",
+                        completed_at=utc_now(),
+                    )
+                    processed_sweeps.append({"market_id": sweep["market_id"], "state": "completed", "onchain_amount_usdc": "0"})
+                    continue
+
+                market_owner_keypair = self._derive_market_owner_keypair(sweep["market_id"])
+                signature = self._send_instructions(
+                    [
+                        transfer_checked(
+                            TransferCheckedParams(
+                                program_id=TOKEN_PROGRAM_ID,
+                                source=Pubkey.from_string(source_token_account),
+                                mint=self._usdc_mint,
+                                dest=self._treasury_token_account,
+                                owner=market_owner_keypair.pubkey(),
+                                amount=onchain_amount_atomic,
+                                decimals=USDC_DECIMALS,
+                                signers=[],
+                            )
+                        )
+                    ],
+                    signers=[self._treasury_keypair, market_owner_keypair],
+                )
+                market_store.mark_revenue_sweep_completed(
+                    market_id=sweep["market_id"],
+                    destination_token_account_address=str(self._treasury_token_account),
+                    onchain_amount_atomic=onchain_amount_atomic,
+                    broadcast_signature=signature,
+                    completed_at=utc_now(),
+                )
+                processed_sweeps.append(
+                    {
+                        "market_id": sweep["market_id"],
+                        "state": "completed",
+                        "broadcast_signature": signature,
+                    }
+                )
+            except Exception as error:
+                logger.exception("Failed to sweep resolved market {}", sweep["market_id"])
+                market_store.mark_revenue_sweep_failed(
+                    market_id=sweep["market_id"],
+                    failure_reason=str(error),
+                    failed_at=utc_now(),
+                )
+                processed_sweeps.append({"market_id": sweep["market_id"], "state": "failed", "reason": str(error)})
+
+        return processed_sweeps
+
+    def get_token_account_balance(self, token_account_address: str) -> int:
+        response = self._client.get_token_account_balance(Pubkey.from_string(token_account_address))
+        return int(response.value.amount)
+
     def _derive_user_owner_keypair(self, user_id: int) -> Keypair:
+        return self._derive_owner_keypair(f"user:{user_id}")
+
+    def _derive_market_owner_keypair(self, market_id: int) -> Keypair:
+        return self._derive_owner_keypair(f"market:{market_id}")
+
+    def _derive_owner_keypair(self, domain: str) -> Keypair:
         master_seed = self._load_seed_bytes(secret_name=self._deposit_master_seed_secret_name)
-        # A single master seed in secret-tool is enough to deterministically re-derive every
-        # user deposit wallet without persisting any per-user private key material to disk.
-        derived_seed = hmac.new(master_seed, str(user_id).encode("utf-8"), hashlib.sha256).digest()
+        # One master seed is enough for both user funding accounts and public market liquidity
+        # accounts as long as the HMAC input is domain-separated and deterministic.
+        derived_seed = hmac.new(master_seed, domain.encode("utf-8"), hashlib.sha256).digest()
         return Keypair.from_seed(derived_seed)
+
+    def _ensure_derived_token_account(self, *, owner_keypair: Keypair) -> DepositAccountAddresses:
+        owner_wallet = owner_keypair.pubkey()
+        token_account = get_associated_token_address(owner_wallet, self._usdc_mint)
+        self._ensure_associated_token_account(owner=owner_wallet)
+        return DepositAccountAddresses(
+            owner_wallet_address=str(owner_wallet),
+            token_account_address=str(token_account),
+        )
+
+    def _ensure_associated_token_account(self, *, owner: Pubkey) -> None:
+        token_account = get_associated_token_address(owner, self._usdc_mint)
+        if self._client.get_account_info(token_account).value is not None:
+            return
+        self._send_instructions(
+            [
+                create_associated_token_account(
+                    payer=self._treasury_wallet,
+                    owner=owner,
+                    mint=self._usdc_mint,
+                )
+            ],
+            signers=[self._treasury_keypair],
+        )
 
     def _load_seed_bytes(self, *, secret_name: str) -> bytes:
         result = subprocess.run(
@@ -210,12 +330,12 @@ class SolanaTreasury:
             )
         return bytes.fromhex(secret_text)
 
-    def _send_instructions(self, instructions: list) -> str:
+    def _send_instructions(self, instructions: list, *, signers: list[Keypair]) -> str:
         latest_blockhash = self._client.get_latest_blockhash().value
         transaction = Transaction.new_signed_with_payer(
             instructions,
             self._treasury_wallet,
-            [self._treasury_keypair],
+            signers,
             latest_blockhash.blockhash,
         )
         response = self._client.send_transaction(transaction)

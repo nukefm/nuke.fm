@@ -8,20 +8,26 @@ nuke.fm is an offchain prediction market product for Bags tokens that settles in
 Each token has a rolling series of markets that ask whether the token will nuke within the
 next 90 days after that market opens.
 
-This repository currently includes two MVP slices:
+This repository currently includes these MVP slices:
 
 - ingest Bags token metadata into a local market catalog
 - create and maintain one current market per token
+- derive and publish one public USDC liquidity deposit address per active market
+- run a weighted YES/NO AMM per open market
+- reconcile one-way market liquidity deposits into pool depth and cash backing
+- quote and execute API-only trades against the weighted pool
+- capture hourly reference-price snapshots from DexScreener pair data
+- track per-market ATH, threshold, and drawdown
+- resolve markets, pay winning accounts, roll the next market forward, and record revenue sweeps
 - expose that catalog through a public JSON API
 - render the same catalog through a read-only web frontend
 - bootstrap private API access with Solana wallet signatures and API keys
 - issue per-user USDC deposit addresses
 - reconcile credited deposits into an internal ledger
 - accept withdrawals and process them through the operator CLI
-- expose account and portfolio data through the private API
+- expose account, position, trade, and portfolio data through the private API
 
-The frontend still publishes market state only. Trading, AMM state, and settlement logic remain
-later deliverables.
+The frontend still publishes market state only. Wallet connection and trading stay API-only.
 
 ## High-Level Model
 
@@ -33,7 +39,7 @@ later deliverables.
 
 ## How It Works
 
-At a high level, the app now has five moving parts.
+At a high level, the app now has seven moving parts.
 
 First, the ingestion command pulls token launch data from the Bags launch feed and stores token
 metadata in a local SQLite database.
@@ -42,37 +48,49 @@ Second, the catalog layer ensures each token has exactly one active current mark
 deliverable, that means creating a market record in `awaiting_liquidity` if no current market
 exists yet, and rolling the series forward when a market is resolved.
 
-Third, the auth layer issues one-time challenges, verifies Solana wallet signatures, and mints
+Third, the market engine stores a weighted YES/NO pool for each active market. Liquidity deposits
+mint equal YES and NO inventory into the pool, then retune the weights so the displayed YES/NO
+prices stay unchanged at the instant of deposit. Buys spend USDC. Sells request a USDC amount out.
+That sell shape is deliberate because it keeps complete-set redemption exact without inventing
+residual opposite-side dust in user positions.
+
+Fourth, the settlement loop captures hourly liquidity-weighted token prices from DexScreener,
+tracks each market's own ATH and 95% drawdown threshold, and resolves to `YES` or `NO` from stored
+snapshots instead of a live price lookup at resolution time.
+
+Fifth, the auth layer issues one-time challenges, verifies Solana wallet signatures, and mints
 API keys for private access.
 
-Fourth, the treasury layer derives deterministic per-user deposit wallets from a master seed in
-`secret-tool`, ensures each user has a USDC associated token account, reconciles deposit balance
-changes, and broadcasts withdrawals from the platform treasury wallet.
+Sixth, the treasury layer derives deterministic per-user and per-market USDC wallets from a master
+seed in `secret-tool`, ensures the associated token accounts exist, reconciles deposit balance
+changes, broadcasts withdrawals from the platform treasury wallet, and sweeps resolved market
+deposit accounts back to the treasury USDC account.
 
-Fifth, the FastAPI app reads the catalog and account ledger and serves them in two forms:
+Seventh, the FastAPI app reads the catalog, AMM state, and account ledger and serves them in two forms:
 
 - JSON endpoints under `/v1/public`
 - JSON endpoints under `/v1/auth` and `/v1/private`
 - HTML pages for the market list and token detail views
 
-The same database backs the public catalog and the private ledger, while the frontend stays a thin
-read-only view over public market data.
+The same SQLite database backs the public catalog, AMM state, settlement snapshots, and private
+ledger, while the frontend stays a thin read-only view over public market data.
 
 ## Current Scope
 
-The current implementation intentionally does not invent data that belongs to later MVP stages.
-That means current-market price, liquidity address, reference price, ATH, drawdown, and threshold
-fields remain explicitly unavailable until the AMM, liquidity, and settlement systems exist.
+The current implementation now covers the market engine and settlement loop, but it is still an
+MVP. Important current constraints:
 
-The private portfolio surface is also intentionally narrow at this stage. API auth, deposit
-addresses, deposit history, withdrawals, and cash balance are implemented now. Positions and trade
-history are real endpoints already, but they return empty arrays until the trading engine exists.
+- market liquidity deposits are one-way only and do not mint LP shares
+- revenue sweep records the full internal leftover backing, but the on-chain transfer only sweeps
+  the market-specific USDC deposit account because user trading stays offchain inside the shared treasury
+- the web frontend remains read-only even though the private trading API is live
 
 ## Runtime
 
 - Python 3.13
 - `BAGS_API_KEY` in `.env` for feed ingestion
 - `secret-tool` entries for the deposit master seed and treasury seed
+- network access to DexScreener for hourly snapshot jobs
 
 ## Commands
 
@@ -80,6 +98,9 @@ history are real endpoints already, but they return empty arrays until the tradi
 - `uv run --env-file .env python -m nukefm ingest --limit 100`
 - `uv run --env-file .env python -m nukefm serve --host 127.0.0.1 --port 8000`
 - `uv run --env-file .env python -m nukefm sync-deposits`
+- `uv run --env-file .env python -m nukefm sync-market-liquidity`
+- `uv run --env-file .env python -m nukefm snapshot-markets`
+- `uv run --env-file .env python -m nukefm resolve-markets`
 - `uv run --env-file .env python -m nukefm process-withdrawals --limit 100`
 
 ## Private Surface
@@ -93,6 +114,8 @@ history are real endpoints already, but they return empty arrays until the tradi
 - `GET /v1/private/account/portfolio`
 - `GET /v1/private/account/positions`
 - `GET /v1/private/account/trades`
+- `POST /v1/private/trades/quote`
+- `POST /v1/private/trades`
 - `POST /v1/private/withdrawals`
 
 ## Secret-Tool Setup
@@ -113,9 +136,9 @@ secret-tool store --label "nuke.fm deposit master seed" service nuke.fm name dep
 secret-tool store --label "nuke.fm treasury seed" service nuke.fm name treasury-seed
 ```
 
-The deposit master seed deterministically derives one deposit wallet per user. The treasury seed
-controls the platform wallet that funds associated token-account creation and withdrawal
-broadcasts.
+The deposit master seed deterministically derives one deposit wallet per user and one public
+liquidity wallet per market. The treasury seed controls the platform wallet that funds associated
+token-account creation, withdrawal broadcasts, and resolved-market revenue sweeps.
 
 ## Public Surface
 
@@ -127,5 +150,8 @@ broadcasts.
 Deposits are reconciled from observed USDC token-account balance increases. That works cleanly at
 this stage because user deposit accounts are one-way funding addresses and the current MVP slice
 does not sweep or trade from them yet.
+
+Market liquidity deposits use the same monotonic-balance reconciliation pattern, but they credit
+weighted-pool depth and market cash backing instead of a user cash balance.
 
 If Bags changes the launch-feed route, update `bags_launch_feed_path` in `config.json` without changing application code.

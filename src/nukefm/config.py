@@ -19,9 +19,12 @@ class Settings:
     log_path: Path
     frontend_refresh_seconds: int
     api_challenge_ttl_seconds: int
+    market_duration_days: int
+    market_threshold_fraction: str
     bags_base_url: str
     bags_launch_feed_path: str
     bags_api_key: str | None
+    dexscreener_base_url: str
     solana_rpc_url: str
     solana_usdc_mint: str
     secret_tool_service: str
@@ -39,9 +42,12 @@ def load_settings() -> Settings:
         log_path=ROOT_DIR / config["log_path"],
         frontend_refresh_seconds=config["frontend_refresh_seconds"],
         api_challenge_ttl_seconds=config["api_challenge_ttl_seconds"],
+        market_duration_days=config["market_duration_days"],
+        market_threshold_fraction=config["market_threshold_fraction"],
         bags_base_url=config["bags_base_url"].rstrip("/"),
         bags_launch_feed_path=config["bags_launch_feed_path"],
         bags_api_key=os.getenv("BAGS_API_KEY") or None,
+        dexscreener_base_url=config["dexscreener_base_url"].rstrip("/"),
         solana_rpc_url=config["solana_rpc_url"],
         solana_usdc_mint=config["solana_usdc_mint"],
         secret_tool_service=config["secret_tool_service"],

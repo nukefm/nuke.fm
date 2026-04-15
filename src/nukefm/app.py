@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated
 
@@ -14,6 +15,7 @@ from .auth import AuthService
 from .catalog import Catalog
 from .config import load_settings
 from .logging_utils import configure_logging
+from .markets import MarketStore
 from .treasury import SolanaTreasury
 
 
@@ -33,6 +35,13 @@ class ApiKeyExchangeRequest(BaseModel):
 
 class WithdrawalCreateRequest(BaseModel):
     destination_wallet_address: str
+    amount_usdc: str
+
+
+class TradeRequest(BaseModel):
+    market_id: int
+    outcome: str
+    side: str
     amount_usdc: str
 
 
@@ -71,12 +80,28 @@ def _resolve_treasury(request: Request) -> SolanaTreasury:
     return treasury
 
 
+def _ensure_market_liquidity_accounts(request: Request) -> None:
+    request.app.state.market_store.ensure_missing_market_liquidity_accounts(_resolve_treasury(request))
+
+
+def _account_payload(request: Request, user_id: int) -> dict:
+    account = request.app.state.account_store.get_account_overview(user_id)
+    positions = request.app.state.market_store.list_positions(user_id)
+    trades = request.app.state.market_store.list_trade_history(user_id)
+    return {
+        **account,
+        "open_positions": positions,
+        "trade_history": trades,
+    }
+
+
 def create_app(
     *,
     settings=None,
     catalog: Catalog | None = None,
     account_store: AccountStore | None = None,
     auth_service: AuthService | None = None,
+    market_store: MarketStore | None = None,
     treasury: SolanaTreasury | None = None,
 ) -> FastAPI:
     settings = settings or load_settings()
@@ -86,6 +111,12 @@ def create_app(
     catalog.initialize()
     account_store = account_store or AccountStore(settings.database_path)
     account_store.initialize()
+    market_store = market_store or MarketStore(
+        settings.database_path,
+        market_duration_days=settings.market_duration_days,
+        threshold_fraction=Decimal(settings.market_threshold_fraction),
+    )
+    market_store.initialize()
     auth_service = auth_service or AuthService(
         app_name=settings.app_name,
         challenge_ttl_seconds=settings.api_challenge_ttl_seconds,
@@ -96,6 +127,7 @@ def create_app(
     app.state.catalog = catalog
     app.state.account_store = account_store
     app.state.auth_service = auth_service
+    app.state.market_store = market_store
     app.state.treasury = treasury
     app.state.settings = settings
     app.mount("/static", StaticFiles(directory=str(PACKAGE_DIR / "static")), name="static")
@@ -105,12 +137,14 @@ def create_app(
         return {"ok": True}
 
     @app.get("/v1/public/tokens")
-    def list_tokens() -> dict:
-        return {"tokens": catalog.list_token_cards()}
+    def list_tokens(request: Request) -> dict:
+        _ensure_market_liquidity_accounts(request)
+        return {"tokens": market_store.list_token_cards()}
 
     @app.get("/v1/public/tokens/{mint}")
-    def token_detail(mint: str) -> dict:
-        token = catalog.get_token_detail(mint)
+    def token_detail(mint: str, request: Request) -> dict:
+        _ensure_market_liquidity_accounts(request)
+        token = market_store.get_token_detail(mint)
         if token is None:
             raise HTTPException(status_code=404, detail="Token not found")
         return token
@@ -128,8 +162,11 @@ def create_app(
         )
 
     @app.get("/v1/private/account")
-    def private_account(user: Annotated[AuthenticatedUser, Depends(_require_authenticated_user)]) -> dict:
-        return account_store.get_account_overview(user.user_id)
+    def private_account(
+        user: Annotated[AuthenticatedUser, Depends(_require_authenticated_user)],
+        request: Request,
+    ) -> dict:
+        return _account_payload(request, user.user_id)
 
     @app.get("/v1/private/account/deposit-address")
     def private_account_deposit_address(
@@ -169,10 +206,12 @@ def create_app(
     @app.get("/v1/private/account/portfolio")
     def private_account_portfolio(
         user: Annotated[AuthenticatedUser, Depends(_require_authenticated_user)],
+        request: Request,
     ) -> dict:
-        account = account_store.get_account_overview(user.user_id)
+        account = _account_payload(request, user.user_id)
         return {
             "wallet_address": account["wallet_address"],
+            "account_balance_usdc": account["account_balance_usdc"],
             "open_positions": account["open_positions"],
             "trade_history": account["trade_history"],
         }
@@ -181,13 +220,48 @@ def create_app(
     def private_account_positions(
         user: Annotated[AuthenticatedUser, Depends(_require_authenticated_user)],
     ) -> dict:
-        return {"positions": account_store.get_account_overview(user.user_id)["open_positions"]}
+        return {"positions": market_store.list_positions(user.user_id)}
 
     @app.get("/v1/private/account/trades")
     def private_account_trades(
         user: Annotated[AuthenticatedUser, Depends(_require_authenticated_user)],
     ) -> dict:
-        return {"trades": account_store.get_account_overview(user.user_id)["trade_history"]}
+        return {"trades": market_store.list_trade_history(user.user_id)}
+
+    @app.post("/v1/private/trades/quote")
+    def quote_trade(
+        body: TradeRequest,
+        user: Annotated[AuthenticatedUser, Depends(_require_authenticated_user)],
+    ) -> dict:
+        from .amounts import parse_usdc_amount
+
+        try:
+            return market_store.quote_trade(
+                market_id=body.market_id,
+                outcome=body.outcome,
+                side=body.side,
+                amount_atomic=parse_usdc_amount(body.amount_usdc),
+            )
+        except (LookupError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.post("/v1/private/trades")
+    def execute_trade(
+        body: TradeRequest,
+        user: Annotated[AuthenticatedUser, Depends(_require_authenticated_user)],
+    ) -> dict:
+        from .amounts import parse_usdc_amount
+
+        try:
+            return market_store.execute_trade(
+                user_id=user.user_id,
+                market_id=body.market_id,
+                outcome=body.outcome,
+                side=body.side,
+                amount_atomic=parse_usdc_amount(body.amount_usdc),
+            )
+        except (LookupError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post("/v1/private/withdrawals")
     def create_withdrawal(
@@ -209,18 +283,20 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     def market_list_page(request: Request):
+        _ensure_market_liquidity_accounts(request)
         return TEMPLATES.TemplateResponse(
             request=request,
             name="index.html",
             context={
-                "tokens": catalog.list_token_cards(),
+                "tokens": market_store.list_token_cards(),
                 "refresh_seconds": settings.frontend_refresh_seconds,
             },
         )
 
     @app.get("/tokens/{mint}", response_class=HTMLResponse)
     def token_page(request: Request, mint: str):
-        token = catalog.get_token_detail(mint)
+        _ensure_market_liquidity_accounts(request)
+        token = market_store.get_token_detail(mint)
         if token is None:
             raise HTTPException(status_code=404, detail="Token not found")
         return TEMPLATES.TemplateResponse(

@@ -130,13 +130,13 @@
 
     <section class="decision-strip decision-strip-compact">
       <article class="decision-card decision-card-primary">
-        <p class="decision-label">PM state</p>
-        <p class="decision-value">{{ trader_state }}</p>
+        <p class="decision-label">Chance of nuke</p>
+        <p class="decision-value">{{ market.chance_of_outcome_percent or "Not live yet" }}</p>
         <p class="decision-copy">
           {% if market.liquidity_deposit_address %}
-          Deposit path ready.
+          Derived from the live market price.
           {% else %}
-          Deposit path pending.
+          Opens with the first funded seed.
           {% endif %}
         </p>
       </article>

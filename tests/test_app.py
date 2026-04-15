@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from nukefm.app import create_app
+from nukefm.accounts import AccountStore
 from nukefm.bags import BagsToken
 from nukefm.catalog import Catalog
 from nukefm.config import Settings
@@ -148,6 +149,43 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
             ],
         )
 
+    account_store = AccountStore(database_path)
+    account_store.initialize()
+    trader = account_store.ensure_user("11111111111111111111111111111111")
+
+    with connect_database(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO market_trades (
+                user_id,
+                market_id,
+                outcome,
+                side,
+                cash_amount_atomic,
+                share_amount_atomic,
+                before_yes_price,
+                before_no_price,
+                after_yes_price,
+                after_no_price,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                trader["id"],
+                gamma_market_id,
+                "yes",
+                "buy",
+                1_000_000,
+                1_000_000,
+                "0.5",
+                "0.5",
+                "0.5",
+                "0.5",
+                "2026-04-15T13:05:00+00:00",
+            ],
+        )
+
     app = create_app(settings=settings, catalog=catalog, market_store=market_store)
     client = TestClient(app)
 
@@ -156,7 +194,8 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert [token["symbol"] for token in token_response.json()["tokens"]] == ["OMEGA", "GAMMA", "ALPHA"]
     gamma_token = next(token for token in token_response.json()["tokens"] if token["symbol"] == "GAMMA")
     assert gamma_token["current_market"]["liquidity_deposit_address"] == "market-deposit-2"
-    assert gamma_token["current_market"]["pm_volume_24h_usdc"] == "0"
+    assert gamma_token["current_market"]["pm_volume_24h_usdc"] == "1"
+    assert gamma_token["current_market"]["chance_of_outcome_percent"] == "50%"
 
     sorted_token_response = client.get("/v1/public/tokens?sort_by=market_liquidity&sort_direction=desc")
     assert sorted_token_response.status_code == 200
@@ -189,17 +228,21 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert detail_api_market["reference_price_usd"] == "0.000000000123"
     assert detail_api_market["threshold_price_usd"] == "0.000000000045"
     assert detail_api_market["underlying_market_cap_usd"] == "0.000000000321"
-    assert detail_api_market["pm_volume_24h_usdc"] == "0"
+    assert detail_api_market["pm_volume_24h_usdc"] == "1"
+    assert detail_api_market["chance_of_outcome_percent"] == "50%"
 
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
     assert "Will GAMMA nuke by 90 days after this market opens?" in detail_response.text
     assert "PM 24h volume" in detail_response.text
-    assert '<p class="decision-value">$0</p>' in detail_response.text
+    assert "Chance of nuke" in detail_response.text
+    assert '<p class="decision-value">50%</p>' in detail_response.text
     assert "$0.000000000123" in detail_response.text
     assert "$0.000000000321" in detail_response.text
-    assert "Liquidity credit of $5 deepened the pool." in detail_response.text
-    assert "USDC" not in detail_response.text
+    assert "Latest trade was a buy of nuke exposure for $1." in detail_response.text
+    assert "YES Price" not in detail_response.text
+    assert "NO Price" not in detail_response.text
+    assert "YES and NO skew" not in detail_response.text
 
     favicon_response = client.get("/static/favicon.svg")
     assert favicon_response.status_code == 200

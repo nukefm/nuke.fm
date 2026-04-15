@@ -1380,7 +1380,8 @@ class MarketStore:
         pool = self._load_pool(connection, row["id"], required=False)
         latest_snapshot = self._latest_snapshot_row(connection, row["id"])
         latest_token_metrics = self._latest_token_metrics_row(connection, row["token_mint"])
-        yes_price_usd = None if pool is None else format_decimal(yes_price(pool))
+        yes_price_value = None if pool is None else yes_price(pool)
+        yes_price_usd = None if yes_price_value is None else format_decimal(yes_price_value)
         no_price_usd = None if pool is None else format_decimal(no_price(pool))
 
         return {
@@ -1395,6 +1396,7 @@ class MarketStore:
             "created_at": row["created_at"],
             "yes_price_usd": yes_price_usd,
             "no_price_usd": no_price_usd,
+            "chance_of_outcome_percent": None if yes_price_value is None else self._chance_of_outcome_percent(yes_price_value),
             "reference_price_usd": None if latest_snapshot is None else format_decimal(parse_decimal(latest_snapshot["reference_price_usd"])),
             "ath_price_usd": None if latest_snapshot is None else format_decimal(parse_decimal(latest_snapshot["ath_price_usd"])),
             "ath_timestamp": None if latest_snapshot is None else latest_snapshot["ath_timestamp"],
@@ -1409,6 +1411,10 @@ class MarketStore:
             if latest_token_metrics is None or latest_token_metrics["underlying_market_cap_usd"] is None
             else format_decimal(parse_decimal(latest_token_metrics["underlying_market_cap_usd"])),
         }
+
+    @staticmethod
+    def _chance_of_outcome_percent(yes_price_value: Decimal) -> str:
+        return f"{format_decimal(yes_price_value * Decimal('100'))}%"
 
     @staticmethod
     def _sort_token_cards(token_cards: list[dict], *, sort_by: str, sort_direction: str) -> None:
@@ -1517,8 +1523,8 @@ class MarketStore:
                 {
                     "timestamp": latest_trade["created_at"],
                     "summary": (
-                        f"Latest trade was a {latest_trade['side']} {latest_trade['outcome'].upper()} "
-                        f"execution for {format_usd_display(format_usdc_amount(latest_trade['cash_amount_atomic']))}."
+                        f"Latest trade was a {latest_trade['side']} of nuke exposure for "
+                        f"{format_usd_display(format_usdc_amount(latest_trade['cash_amount_atomic']))}."
                     ),
                 }
             )

@@ -57,6 +57,32 @@ class FakeDexScreenerClient:
         return self._pairs_by_mint.get(token_mint, [])
 
 
+def create_markets_from_prices(
+    market_store: MarketStore,
+    prices_by_mint: dict[str, Decimal],
+    *,
+    captured_at: str = "2026-04-15T12:00:00+00:00",
+) -> None:
+    market_store.capture_token_metrics(
+        FakeDexScreenerClient(
+            {
+                mint: [
+                    DexScreenerPair(
+                        pair_address=f"{mint}-pair",
+                        dex_id="raydium",
+                        price_usd=price,
+                        liquidity_usd=Decimal("100"),
+                        volume_h24_usd=Decimal("10"),
+                        market_cap_usd=Decimal("1000"),
+                    )
+                ]
+                for mint, price in prices_by_mint.items()
+            }
+        ),
+        captured_at=captured_at,
+    )
+
+
 class SelectiveSettlementPriceClient:
     def __init__(self, prices_by_mint: dict[str, Decimal], missing_mints: set[str]) -> None:
         self._prices_by_mint = prices_by_mint
@@ -93,6 +119,7 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
 
     market_store = MarketStore(database_path)
     market_store.initialize()
+    create_markets_from_prices(market_store, {"Mint555": Decimal("10")}, captured_at="2026-04-15T12:00:00+00:00")
     treasury = FakeTreasury()
     market_store.ensure_missing_market_liquidity_accounts(treasury)
 
@@ -182,9 +209,9 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
         )
         for row in snapshot_rows
     ] == [
-        ("2026-04-15T13:00:00+00:00", "2026-04-15T14:00:00+00:00", "10", "10", "0", "0.50"),
-        ("2026-04-15T14:00:00+00:00", "2026-04-15T15:00:00+00:00", "0.4", "10", "0.96", "0.50"),
-        ("2026-04-15T15:00:00+00:00", "2026-04-15T16:00:00+00:00", "0.8", "10", "0.92", "0.50"),
+        ("2026-04-15T13:00:00+00:00", "2026-04-15T14:00:00+00:00", "10", "10", "0", "1"),
+        ("2026-04-15T14:00:00+00:00", "2026-04-15T15:00:00+00:00", "0.4", "10", "0.96", "1"),
+        ("2026-04-15T15:00:00+00:00", "2026-04-15T16:00:00+00:00", "0.8", "10", "0.92", "1"),
     ]
 
     resolved = market_store.resolve_markets(
@@ -202,6 +229,60 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     assert token["current_market"]["liquidity_deposit_address"] == "market-deposit-2"
     assert market_store.list_pending_revenue_sweeps(limit=10) == []
     assert account_store.get_available_balance_atomic(user["id"]) > 30_000_000
+
+
+def test_range_exit_creates_hidden_active_predecessor(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    catalog = Catalog(database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint="MintRoll",
+                name="Rollover",
+                symbol="ROLL",
+                image_url=None,
+                launched_at=None,
+                creator=None,
+            )
+        ]
+    )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+    create_markets_from_prices(market_store, {"MintRoll": Decimal("10")}, captured_at="2026-04-15T12:00:00+00:00")
+    treasury = FakeTreasury()
+    market_store.ensure_missing_market_liquidity_accounts(treasury)
+
+    first_market_id = market_store.get_token_detail("MintRoll")["current_market"]["id"]
+    market_store.record_market_liquidity_credit(
+        market_id=first_market_id,
+        amount_atomic=10_000_000,
+        observed_balance_after_atomic=10_000_000,
+        credited_at="2026-04-15T12:30:00+00:00",
+    )
+
+    market_store.capture_hourly_snapshots(
+        FakeSettlementPriceClient([Decimal("45")]),
+        captured_at="2026-04-15T13:00:00+00:00",
+    )
+
+    token = market_store.get_token_detail("MintRoll")
+    assert token is not None
+    assert token["current_market"]["sequence_number"] == 2
+    assert token["current_market"]["state"] == "awaiting_liquidity"
+    assert token["current_market"]["starting_price_usd"] == "45"
+    assert token["hidden_active_markets"][0]["id"] == first_market_id
+    assert token["hidden_active_markets"][0]["state"] == "open"
+    assert token["hidden_active_markets"][0]["is_frontend_visible"] is False
+
+    quoted = market_store.quote_trade(
+        market_id=first_market_id,
+        outcome="yes",
+        side="buy",
+        amount_atomic=1_000_000,
+    )
+    assert quoted["market_id"] == first_market_id
 
 
 def test_snapshot_uses_last_closed_wall_clock_hour_before_market_start(tmp_path: Path) -> None:
@@ -223,6 +304,7 @@ def test_snapshot_uses_last_closed_wall_clock_hour_before_market_start(tmp_path:
 
     market_store = MarketStore(database_path)
     market_store.initialize()
+    create_markets_from_prices(market_store, {"MintFresh": Decimal("1")}, captured_at="2026-04-15T16:20:00+00:00")
     treasury = FakeTreasury()
     market_store.ensure_missing_market_liquidity_accounts(treasury)
     market_id = market_store.list_token_cards()[0]["current_market"]["id"]
@@ -242,8 +324,7 @@ def test_snapshot_uses_last_closed_wall_clock_hour_before_market_start(tmp_path:
             "market_id": market_id,
             "state": "open",
             "reference_price_usd": "1",
-            "ath_price_usd": "1",
-            "threshold_price_usd": "0.05",
+            "threshold_price_usd": "0.1",
         }
     ]
     assert updated == [
@@ -251,8 +332,7 @@ def test_snapshot_uses_last_closed_wall_clock_hour_before_market_start(tmp_path:
             "market_id": market_id,
             "state": "open",
             "reference_price_usd": "1.5",
-            "ath_price_usd": "1.5",
-            "threshold_price_usd": "0.075",
+            "threshold_price_usd": "0.1",
         }
     ]
     assert price_client.calls == [
@@ -284,14 +364,14 @@ def test_snapshot_uses_last_closed_wall_clock_hour_before_market_start(tmp_path:
             "2026-04-15T16:34:30+00:00",
             "1",
             "1",
-            "0.05",
+            "0.1",
         ),
         (
             "2026-04-15T17:00:00+00:00",
             "2026-04-15T17:05:00+00:00",
             "1.5",
-            "1.5",
-            "0.075",
+            "1",
+            "0.1",
         )
     ]
 
@@ -309,6 +389,14 @@ def test_snapshot_skips_only_markets_missing_price_data(tmp_path: Path) -> None:
 
     market_store = MarketStore(database_path)
     market_store.initialize()
+    create_markets_from_prices(
+        market_store,
+        {
+            "MintGood": Decimal("2"),
+            "MintMissing": Decimal("3"),
+        },
+        captured_at="2026-04-15T09:50:00+00:00",
+    )
     treasury = FakeTreasury()
     market_store.ensure_missing_market_liquidity_accounts(treasury)
 
@@ -340,8 +428,7 @@ def test_snapshot_skips_only_markets_missing_price_data(tmp_path: Path) -> None:
             "market_id": good_market_id,
             "state": "open",
             "reference_price_usd": "2",
-            "ath_price_usd": "2",
-            "threshold_price_usd": "0.1",
+            "threshold_price_usd": "0.2",
         }
     ]
 
@@ -392,6 +479,14 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
 
     market_store = MarketStore(database_path)
     market_store.initialize()
+    create_markets_from_prices(
+        market_store,
+        {
+            "MintA": Decimal("2"),
+            "MintB": Decimal("4"),
+            "MintC": Decimal("1"),
+        },
+    )
     treasury = FakeTreasury()
     market_store.ensure_missing_market_liquidity_accounts(treasury)
 
@@ -414,8 +509,8 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     market_store.capture_hourly_snapshots(
         FakeSettlementPriceClient(
             [
-                Decimal("2"),
                 Decimal("4"),
+                Decimal("2"),
             ]
         ),
         captured_at="2026-04-15T12:00:00+00:00",
@@ -423,8 +518,8 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     market_store.capture_hourly_snapshots(
         FakeSettlementPriceClient(
             [
-                Decimal("1"),
                 Decimal("3"),
+                Decimal("1"),
             ]
         ),
         captured_at="2026-04-15T13:00:00+00:00",
@@ -488,7 +583,7 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
 
     beta_card = market_store.get_token_detail("MintB")
     assert beta_card is not None
-    assert beta_card["current_market"]["drawdown_fraction"] == "0.25"
+    assert beta_card["current_market"]["remaining_drop_percent"] == "86.67%"
     assert beta_card["current_market"]["underlying_volume_24h_usd"] == "250"
     assert beta_card["current_market"]["underlying_market_cap_usd"] == "8000"
 
@@ -501,8 +596,8 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     expected_orders = {
         ("market_liquidity", "asc"): ["MintA", "MintB", "MintC"],
         ("market_liquidity", "desc"): ["MintB", "MintA", "MintC"],
-        ("dump_percentage", "asc"): ["MintB", "MintA", "MintC"],
-        ("dump_percentage", "desc"): ["MintA", "MintB", "MintC"],
+        ("dump_percentage", "asc"): ["MintA", "MintB", "MintC"],
+        ("dump_percentage", "desc"): ["MintC", "MintB", "MintA"],
         ("underlying_volume", "asc"): ["MintA", "MintB", "MintC"],
         ("underlying_volume", "desc"): ["MintB", "MintA", "MintC"],
         ("underlying_market_cap", "asc"): ["MintA", "MintB", "MintC"],
@@ -536,6 +631,7 @@ def test_current_market_serialization_uses_trailing_24h_pm_volume(tmp_path: Path
 
     market_store = MarketStore(database_path)
     market_store.initialize()
+    create_markets_from_prices(market_store, {"MintVolume": Decimal("1")})
 
     market_id = market_store.get_token_detail("MintVolume")["current_market"]["id"]
     reference_time = datetime.fromisoformat(utc_now())
@@ -607,6 +703,7 @@ def test_market_chart_snapshots_bucket_and_serialize_current_series(tmp_path: Pa
 
     market_store = MarketStore(database_path)
     market_store.initialize()
+    create_markets_from_prices(market_store, {"MintChart": Decimal("1.25")})
     market_id = market_store.get_token_detail("MintChart")["current_market"]["id"]
     market_store.record_market_liquidity_credit(
         market_id=market_id,

@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 import base58
@@ -10,6 +11,7 @@ from nukefm.app import create_app
 from nukefm.bags import BagsToken
 from nukefm.catalog import Catalog
 from nukefm.config import Settings
+from nukefm.dexscreener import DexScreenerPair
 from nukefm.treasury import DepositAccountAddresses
 
 
@@ -104,6 +106,14 @@ class FakeTreasury:
         return processed
 
 
+class FakeDexScreenerClient:
+    def __init__(self, pairs_by_mint: dict[str, list[DexScreenerPair]]) -> None:
+        self._pairs_by_mint = pairs_by_mint
+
+    def list_token_pairs(self, token_mint: str) -> list[DexScreenerPair]:
+        return self._pairs_by_mint[token_mint]
+
+
 def _make_settings(tmp_path: Path) -> Settings:
     return Settings(
         app_name="nuke.fm",
@@ -112,7 +122,9 @@ def _make_settings(tmp_path: Path) -> Settings:
         frontend_refresh_seconds=30,
         api_challenge_ttl_seconds=300,
         market_duration_days=90,
-        market_threshold_fraction="0.05",
+        market_resolution_threshold_fraction="0.10",
+        market_rollover_lower_bound_fraction="0.25",
+        market_rollover_upper_bound_fraction="4.0",
         bags_base_url="https://public-api-v2.bags.fm/api/v1",
         bags_launch_feed_path="/token-launch/feed",
         bags_api_key=None,
@@ -167,6 +179,23 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     treasury = FakeTreasury()
     app = create_app(settings=settings, catalog=catalog, account_store=account_store, treasury=treasury)
     client = TestClient(app)
+    app.state.market_store.capture_token_metrics(
+        FakeDexScreenerClient(
+            {
+                "Mint444": [
+                    DexScreenerPair(
+                        pair_address="delta-pair",
+                        dex_id="raydium",
+                        price_usd=Decimal("1.2"),
+                        liquidity_usd=Decimal("100"),
+                        volume_h24_usd=Decimal("10"),
+                        market_cap_usd=Decimal("1200"),
+                    )
+                ]
+            }
+        ),
+        captured_at="2026-04-15T12:00:00+00:00",
+    )
 
     wallet_address, api_key = _bootstrap_private_client(client)
     headers = {"X-API-Key": api_key}

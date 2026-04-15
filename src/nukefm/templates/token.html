@@ -5,13 +5,13 @@
 {% set chart = token.current_market_chart %}
 {% if market.state == "awaiting_liquidity" %}
   {% set trader_state = "Signal waiting on seed" %}
-  {% set trader_state_note = "The PM is not actionable yet. The first funded liquidity deposit starts the 90 day clock and live pricing." %}
+  {% set trader_state_note = "The next visible series is staged with a fixed nuke threshold. Trading opens after the first funded liquidity deposit." %}
 {% elif market.state == "open" %}
   {% set trader_state = "Signal live" %}
-  {% set trader_state_note = "The PM is live. Compare the chance of nuke against the reference, ATH drawdown, and threshold before acting on the token." %}
+  {% set trader_state_note = "The PM is live. Compare the chance of nuke against the latest monitored token price and the fixed nuke threshold before acting on the token." %}
 {% elif market.state == "halted" %}
   {% set trader_state = "Signal paused" %}
-  {% set trader_state_note = "Trading is halted. Use the last captured levels and activity trail as context, not as a fresh live read." %}
+  {% set trader_state_note = "Trading is halted. Use the last captured token price, fixed threshold, and activity trail as context, not as a fresh live read." %}
 {% else %}
   {% set trader_state = "Series closed" %}
   {% set trader_state_note = "This series has resolved. Use it as historical context only." %}
@@ -45,7 +45,7 @@
         {% if market.state == "open" %}
         Derived from the live market price.
         {% else %}
-        Opens with the first funded seed.
+        Goes live with the first funded seed.
         {% endif %}
       </p>
     </article>
@@ -134,24 +134,24 @@
         <dd>{{ market.chance_of_outcome_percent or "Not live yet" }}</dd>
       </div>
       <div>
-        <dt>Reference</dt>
+        <dt>Current token price</dt>
         <dd>{{ usd_display(market.reference_price_usd) or "No snapshot yet" }}</dd>
       </div>
       <div>
-        <dt>Threshold</dt>
+        <dt>Nuke threshold</dt>
         <dd>{{ usd_display(market.threshold_price_usd) or "No threshold yet" }}</dd>
       </div>
       <div>
-        <dt>ATH</dt>
-        <dd>{{ usd_display(market.ath_price_usd) or "No ATH yet" }}</dd>
+        <dt>Current gap to nuke</dt>
+        <dd>{{ market.remaining_drop_percent }}</dd>
       </div>
       <div>
-        <dt>Drawdown</dt>
-        <dd>{{ market.drawdown_fraction or "No drawdown yet" }}</dd>
+        <dt>Range floor</dt>
+        <dd>{{ usd_display(market.range_floor_price_usd) }}</dd>
       </div>
       <div>
-        <dt>ATH Timestamp</dt>
-        <dd>{{ market.ath_timestamp or "No snapshot yet" }}</dd>
+        <dt>Range ceiling</dt>
+        <dd>{{ usd_display(market.range_ceiling_price_usd) }}</dd>
       </div>
       <div>
         <dt>Expiry</dt>
@@ -172,6 +172,10 @@
       <div>
         <dt>Series</dt>
         <dd>{{ market.sequence_number }}</dd>
+      </div>
+      <div>
+        <dt>Starting price</dt>
+        <dd>{{ usd_display(market.starting_price_usd) }}</dd>
       </div>
       <div>
         <dt>Market Start</dt>
@@ -245,6 +249,30 @@
       {% endfor %}
     </ul>
   </article>
+</section>
+
+<section class="detail-card">
+  <div class="detail-section-heading">
+    <div>
+      <p class="eyebrow">Hidden Active</p>
+      <h2>Older live series</h2>
+    </div>
+    <p class="section-copy">These markets stay tradable and resolvable through the API, but the frontend only highlights the newest visible series.</p>
+  </div>
+  {% if token.hidden_active_markets %}
+  <ul class="activity-list activity-list-tight">
+    {% for market in token.hidden_active_markets %}
+    <li>
+      <div>
+        <p>Series {{ market.sequence_number }} is {{ market.state|replace("_", " ") }} at {{ market.question }}</p>
+        <time>{{ market.superseded_at or market.created_at }}</time>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="availability-note">No older active series are currently hidden from the frontend.</p>
+  {% endif %}
 </section>
 
 <section class="detail-card">

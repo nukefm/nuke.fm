@@ -11,16 +11,16 @@ next 90 days after that market opens.
 This repository currently includes these MVP slices:
 
 - ingest Bags token metadata into a local market catalog
-- create and maintain one current market per token
+- create and maintain one frontend-visible fixed-anchor market per token
 - derive and publish one public USDC liquidity deposit address per active market
 - run a weighted YES/NO AMM per open market
 - reconcile one-way market liquidity deposits into pool depth and cash backing
 - quote and execute API-only trades against the weighted pool
 - capture hourly settlement snapshots from a rolling 24h median of Jupiter USD price candles
-- track per-market ATH, threshold, and drawdown from those median prices
+- track each market against a fixed starting price, fixed nuke threshold, and fixed rollover range
 - capture Jupiter token metrics and sort the public market board by liquidity, dump %, underlying volume, or underlying market cap
 - debt-fund a weekly $1 PM seed into the top 10 current markets by underlying market cap
-- resolve markets from stored historical snapshots, pay winning accounts, roll the next market forward, and record revenue sweeps
+- resolve markets from stored historical snapshots, roll the frontend-visible series when the price exits range, pay winning accounts, and record revenue sweeps
 - expose that catalog through a public JSON API
 - render the same catalog through a read-only web frontend
 - bootstrap private API access with Solana wallet signatures and API keys
@@ -34,9 +34,13 @@ The frontend still publishes market state only. Wallet connection and trading st
 ## High-Level Model
 
 - The canonical token identifier is the mint address.
-- Every token has one current market and zero or more past markets.
-- A new token starts with a current market in `awaiting_liquidity`.
-- When a market resolves, the next market for that same token is created immediately.
+- Every token has one frontend-visible current market, zero or more hidden active markets, and zero or more past markets.
+- A market is created from a real observed token price and stores fixed lifecycle anchors up front:
+  - starting price
+  - nuke threshold
+  - rollover range floor
+  - rollover range ceiling
+- Older rolled markets can stay active, tradable, and later resolvable even after the frontend moves on to a newer visible market.
 - The public market term is `nuke`, not `rug`.
 
 ## How It Works
@@ -46,9 +50,8 @@ At a high level, the app now has seven moving parts.
 First, the ingestion command pulls token launch data from the Bags launch feed and stores token
 metadata in a local SQLite database.
 
-Second, the catalog layer ensures each token has exactly one active current market. For the first
-deliverable, that means creating a market record in `awaiting_liquidity` if no current market
-exists yet, and rolling the series forward when a market is resolved.
+Second, the catalog layer stores token metadata and market state, while the market lifecycle code
+creates missing visible markets from real observed prices during token-metric refreshes.
 
 Third, the market engine stores a weighted YES/NO pool for each active market. Liquidity deposits
 mint equal YES and NO inventory into the pool, then retune the weights so the displayed YES/NO
@@ -58,8 +61,9 @@ funded without inventing opposite-side dust. If atomic rounding prevents filling
 share amount exactly, the response reports the small unfilled remainder explicitly.
 
 Fourth, the settlement loop captures hourly rolling 24h median reference prices from historical
-trade data, tracks each market's own ATH and 95% drawdown threshold from that median series, and
-resolves to `YES` or `NO` from stored snapshots instead of a live price lookup at resolution time.
+trade data, resolves `YES` when that monitored price first falls through the market's fixed
+threshold before expiry, resolves `NO` at expiry otherwise, and rolls the frontend-visible series
+forward when the monitored price leaves that market's configured range.
 
 Fifth, the auth layer issues one-time challenges, verifies Solana wallet signatures, and mints
 API keys for private access.
@@ -187,6 +191,13 @@ token-account creation, withdrawal broadcasts, and resolved-market revenue sweep
 The public token list and board support `sort_by` and `sort_direction` query parameters. Accepted
 `sort_by` values are `market_liquidity`, `dump_percentage`, `underlying_volume`, and
 `underlying_market_cap`.
+
+The visible frontend question is dynamic:
+
+- `Will {symbol} nuke by {x}% by {date}?`
+
+`sync-token-metrics` now does double duty: it stores token metrics and creates any missing
+frontend-visible market using the current observed token price as the fixed market anchor.
 
 Deposits are reconciled from observed USDC token-account balance increases. That works cleanly at
 this stage because user deposit accounts are one-way funding addresses and the current MVP slice

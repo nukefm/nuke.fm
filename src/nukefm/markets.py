@@ -8,7 +8,7 @@ import sqlite3
 from loguru import logger
 
 from .amounts import format_usdc_amount
-from .catalog import ACTIVE_MARKET_STATES
+from .catalog import ACTIVE_MARKET_STATES, seed_market_question
 from .database import connect_database, utc_now
 from .display import format_usd_display
 from .settlement import SettlementPriceClient
@@ -28,7 +28,7 @@ from .weighted_pool import (
 
 TOKEN_CARD_SORT_OPTIONS = (
     ("market_liquidity", "Market liquidity"),
-    ("dump_percentage", "Dump %"),
+    ("dump_percentage", "Nuke distance"),
     ("underlying_volume", "Underlying volume"),
     ("underlying_market_cap", "Underlying market cap"),
 )
@@ -42,11 +42,15 @@ class MarketStore:
         database_path: Path,
         *,
         market_duration_days: int = 90,
-        threshold_fraction: Decimal = Decimal("0.05"),
+        resolution_threshold_fraction: Decimal = Decimal("0.10"),
+        rollover_lower_bound_fraction: Decimal = Decimal("0.25"),
+        rollover_upper_bound_fraction: Decimal = Decimal("4.0"),
     ) -> None:
         self._database_path = database_path
         self._market_duration = timedelta(days=market_duration_days)
-        self._threshold_fraction = threshold_fraction
+        self._resolution_threshold_fraction = resolution_threshold_fraction
+        self._rollover_lower_bound_fraction = rollover_lower_bound_fraction
+        self._rollover_upper_bound_fraction = rollover_upper_bound_fraction
 
     def initialize(self) -> None:
         with connect_database(self._database_path) as connection:
@@ -199,6 +203,13 @@ class MarketStore:
                 );
                 """
             )
+            self._ensure_market_column(connection, "starting_price_usd", "TEXT")
+            self._ensure_market_column(connection, "threshold_price_usd", "TEXT")
+            self._ensure_market_column(connection, "range_floor_price_usd", "TEXT")
+            self._ensure_market_column(connection, "range_ceiling_price_usd", "TEXT")
+            self._ensure_market_column(connection, "is_frontend_visible", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_market_column(connection, "superseded_by_market_id", "INTEGER REFERENCES markets(id) ON DELETE SET NULL")
+            self._ensure_market_column(connection, "superseded_at", "TEXT")
 
     def list_token_cards(self, *, sort_by: str | None = None, sort_direction: str = "desc") -> list[dict]:
         with connect_database(self._database_path) as connection:
@@ -232,13 +243,20 @@ class MarketStore:
         captured_timestamp = captured_at or utc_now()
 
         with connect_database(self._database_path) as connection:
-            rows = self._list_current_market_rows(connection)
+            token_rows = connection.execute(
+                """
+                SELECT mint, symbol
+                FROM tokens
+                ORDER BY COALESCE(launched_at, created_at) DESC, symbol ASC
+                """
+            ).fetchall()
             captured_rows: list[dict] = []
 
-            for row in rows:
+            for row in token_rows:
                 pairs = metrics_client.list_token_pairs(row["mint"])
                 underlying_volume = self._sum_pair_volume(pairs)
                 market_cap_pair = self._most_liquid_pair_with_market_cap(pairs)
+                price_pair = self._most_liquid_pair_with_price(pairs)
 
                 connection.execute(
                     """
@@ -271,10 +289,27 @@ class MarketStore:
                         None if market_cap_pair is None or market_cap_pair.market_cap_usd is None else str(market_cap_pair.market_cap_usd),
                         None if market_cap_pair is None else market_cap_pair.pair_address,
                         None if market_cap_pair is None else market_cap_pair.dex_id,
-                        None if market_cap_pair is None or market_cap_pair.price_usd is None else str(market_cap_pair.price_usd),
-                        None if market_cap_pair is None else str(market_cap_pair.liquidity_usd),
+                        None if price_pair is None or price_pair.price_usd is None else str(price_pair.price_usd),
+                        None if price_pair is None else str(price_pair.liquidity_usd),
                     ],
                 )
+                if self._frontend_visible_market_row(connection, row["mint"]) is None:
+                    if price_pair is None or price_pair.price_usd is None:
+                        logger.warning(
+                            "Skipping market creation for token {} ({}) at {} because the creation price is unavailable.",
+                            row["symbol"],
+                            row["mint"],
+                            captured_timestamp,
+                        )
+                    else:
+                        self._create_market(
+                            connection,
+                            token_mint=row["mint"],
+                            symbol=row["symbol"],
+                            created_at=captured_timestamp,
+                            starting_price_usd=price_pair.price_usd,
+                            is_frontend_visible=True,
+                        )
                 captured_rows.append(
                     {
                         "mint": row["mint"],
@@ -362,31 +397,34 @@ class MarketStore:
             if token_row is None:
                 return None
 
-            current_market = connection.execute(
-                """
-                SELECT *
-                FROM markets
-                WHERE token_mint = ?
-                  AND state IN ('awaiting_liquidity', 'open', 'halted')
-                ORDER BY sequence_number DESC
-                LIMIT 1
-                """,
-                [mint],
-            ).fetchone()
+            current_market = self._frontend_visible_market_row(connection, mint)
             if current_market is None:
                 return None
 
+            hidden_active_market_rows = connection.execute(
+                """
+                SELECT markets.*, tokens.symbol
+                FROM markets
+                JOIN tokens ON tokens.mint = markets.token_mint
+                WHERE token_mint = ?
+                  AND is_frontend_visible = 0
+                  AND state IN ('awaiting_liquidity', 'open', 'halted')
+                ORDER BY sequence_number DESC
+                """,
+                [mint],
+            ).fetchall()
             past_market_rows = connection.execute(
                 """
-                SELECT *
+                SELECT markets.*, tokens.symbol
                 FROM markets
+                JOIN tokens ON tokens.mint = markets.token_mint
                 WHERE token_mint = ?
                   AND state IN ('resolved_yes', 'resolved_no', 'void')
                 ORDER BY sequence_number DESC
                 """,
                 [mint],
             ).fetchall()
-            market_ids = [current_market["id"], *[row["id"] for row in past_market_rows]]
+            market_ids = [current_market["id"], *[row["id"] for row in hidden_active_market_rows], *[row["id"] for row in past_market_rows]]
             pm_volume_24h_by_market_id = self._market_volume_24h_by_market_id(connection, market_ids)
 
             return {
@@ -401,6 +439,14 @@ class MarketStore:
                     current_market,
                     pm_volume_24h_atomic=pm_volume_24h_by_market_id.get(current_market["id"], 0),
                 ),
+                "hidden_active_markets": [
+                    self._serialize_market(
+                        connection,
+                        row,
+                        pm_volume_24h_atomic=pm_volume_24h_by_market_id.get(row["id"], 0),
+                    )
+                    for row in hidden_active_market_rows
+                ],
                 "past_markets": [
                     self._serialize_market(
                         connection,
@@ -781,6 +827,7 @@ class MarketStore:
                         SELECT current_market.id
                         FROM markets AS current_market
                         WHERE current_market.token_mint = tokens.mint
+                          AND current_market.is_frontend_visible = 1
                           AND current_market.state IN ('awaiting_liquidity', 'open', 'halted')
                         ORDER BY current_market.sequence_number DESC
                         LIMIT 1
@@ -927,8 +974,20 @@ class MarketStore:
         with connect_database(self._database_path) as connection:
             market_rows = connection.execute(
                 """
-                SELECT markets.id, markets.token_mint, markets.market_start, markets.state
+                SELECT
+                    markets.id,
+                    markets.token_mint,
+                    tokens.symbol,
+                    markets.market_start,
+                    markets.state,
+                    markets.created_at,
+                    markets.starting_price_usd,
+                    markets.threshold_price_usd,
+                    markets.range_floor_price_usd,
+                    markets.range_ceiling_price_usd,
+                    markets.is_frontend_visible
                 FROM markets
+                JOIN tokens ON tokens.mint = markets.token_mint
                 WHERE markets.state IN ('open', 'halted')
                 ORDER BY markets.id ASC
                 """
@@ -969,15 +1028,9 @@ class MarketStore:
                     continue
 
                 latest_snapshot = self._latest_snapshot_row(connection, market_row["id"])
-                ath_price = reference_price
-                ath_timestamp = next_snapshot_hour.isoformat()
-                if latest_snapshot is not None:
-                    previous_ath = parse_decimal(latest_snapshot["ath_price_usd"])
-                    if previous_ath >= reference_price:
-                        ath_price = previous_ath
-                        ath_timestamp = latest_snapshot["ath_timestamp"]
-                threshold_price = ath_price * self._threshold_fraction
-                drawdown_fraction = Decimal("0") if ath_price == 0 else ONE - (reference_price / ath_price)
+                starting_price = parse_decimal(market_row["starting_price_usd"])
+                threshold_price = parse_decimal(market_row["threshold_price_usd"])
+                price_change_fraction = Decimal("0") if starting_price == 0 else ONE - (reference_price / starting_price)
 
                 connection.execute(
                     """
@@ -1005,25 +1058,33 @@ class MarketStore:
                     [
                         market_row["id"],
                         next_snapshot_hour.isoformat(),
-                        str(reference_price),
+                        format_decimal(reference_price),
                         1,
-                        str(ath_price),
-                        ath_timestamp,
-                        str(drawdown_fraction),
-                        str(threshold_price),
+                        format_decimal(starting_price),
+                        market_row["created_at"],
+                        format_decimal(price_change_fraction),
+                        format_decimal(threshold_price),
                         captured_timestamp,
                     ],
                 )
-                connection.execute(
-                    "UPDATE markets SET state = 'open', updated_at = ? WHERE id = ?",
-                    [captured_timestamp, market_row["id"]],
-                )
+                connection.execute("UPDATE markets SET updated_at = ? WHERE id = ?", [captured_timestamp, market_row["id"]])
+
+                if (
+                    bool(market_row["is_frontend_visible"])
+                    and self._price_outside_rollover_range(reference_price, market_row)
+                    and self._frontend_visible_market_row(connection, market_row["token_mint"])["id"] == market_row["id"]
+                ):
+                    self._create_successor_market(
+                        connection,
+                        market_row=market_row,
+                        starting_price_usd=reference_price,
+                        created_at=next_snapshot_hour.isoformat(),
+                    )
                 captured_rows.append(
                     {
                         "market_id": market_row["id"],
-                        "state": "open",
+                        "state": market_row["state"],
                         "reference_price_usd": format_decimal(reference_price),
-                        "ath_price_usd": format_decimal(ath_price),
                         "threshold_price_usd": format_decimal(threshold_price),
                     }
                 )
@@ -1042,10 +1103,11 @@ class MarketStore:
                     markets.token_mint,
                     markets.expiry,
                     markets.state,
+                    markets.is_frontend_visible,
+                    markets.starting_price_usd,
+                    markets.threshold_price_usd,
                     market_snapshots.snapshot_hour,
-                    market_snapshots.reference_price_usd,
-                    market_snapshots.ath_timestamp,
-                    market_snapshots.threshold_price_usd
+                    market_snapshots.reference_price_usd
                 FROM markets
                 LEFT JOIN market_snapshots
                   ON market_snapshots.market_id = markets.id
@@ -1067,20 +1129,44 @@ class MarketStore:
                     continue
 
                 expiry_time = self._parse_timestamp(row["expiry"])
+                threshold_price = parse_decimal(row["threshold_price_usd"])
+                latest_price_before_expiry = parse_decimal(row["starting_price_usd"])
                 for snapshot_row in snapshot_rows.get(market_id, []):
                     snapshot_time = self._parse_timestamp(snapshot_row["snapshot_hour"])
-                    if snapshot_time > self._parse_timestamp(snapshot_row["ath_timestamp"]) and snapshot_time <= expiry_time:
-                        threshold_price = parse_decimal(snapshot_row["threshold_price_usd"])
-                        reference_price = parse_decimal(snapshot_row["reference_price_usd"])
-                        if reference_price <= threshold_price:
-                            markets_to_resolve.append((market_id, "resolved_yes", snapshot_row["snapshot_hour"]))
-                            break
+                    if snapshot_time > expiry_time:
+                        continue
+                    latest_price_before_expiry = parse_decimal(snapshot_row["reference_price_usd"])
+                    if latest_price_before_expiry <= threshold_price:
+                        markets_to_resolve.append(
+                            (
+                                market_id,
+                                "resolved_yes",
+                                snapshot_row["snapshot_hour"],
+                                bool(row["is_frontend_visible"]),
+                                latest_price_before_expiry,
+                            )
+                        )
+                        break
                 else:
                     if resolution_time >= expiry_time:
-                        markets_to_resolve.append((market_id, "resolved_no", resolution_timestamp))
+                        markets_to_resolve.append(
+                            (
+                                market_id,
+                                "resolved_no",
+                                resolution_timestamp,
+                                bool(row["is_frontend_visible"]),
+                                latest_price_before_expiry,
+                            )
+                        )
 
-        for market_id, outcome_state, market_resolved_at in markets_to_resolve:
-            self._settle_market(catalog, market_id, outcome_state, market_resolved_at)
+        for market_id, outcome_state, market_resolved_at, should_create_successor, successor_price_usd in markets_to_resolve:
+            self._settle_market(
+                catalog,
+                market_id,
+                outcome_state,
+                market_resolved_at,
+                successor_price_usd=successor_price_usd if should_create_successor else None,
+            )
             resolved_markets.append(
                 {
                     "market_id": market_id,
@@ -1144,11 +1230,34 @@ class MarketStore:
                 [failure_reason, failed_at, market_id],
             )
 
-    def _settle_market(self, catalog, market_id: int, outcome_state: str, resolved_at: str) -> None:
+    def _settle_market(
+        self,
+        catalog,
+        market_id: int,
+        outcome_state: str,
+        resolved_at: str,
+        *,
+        successor_price_usd: Decimal | None,
+    ) -> None:
         winning_outcome = "yes" if outcome_state == "resolved_yes" else "no"
         winning_column = "yes_shares_atomic" if winning_outcome == "yes" else "no_shares_atomic"
+        create_successor = False
+        successor_token_mint = ""
+        successor_symbol = ""
+        next_starting_price: Decimal | None = None
 
         with connect_database(self._database_path) as connection:
+            market_row = connection.execute(
+                """
+                SELECT markets.*, tokens.symbol
+                FROM markets
+                JOIN tokens ON tokens.mint = markets.token_mint
+                WHERE markets.id = ?
+                """,
+                [market_id],
+            ).fetchone()
+            if market_row is None:
+                raise LookupError(f"Unknown market id: {market_id}")
             pool = self._load_pool(connection, market_id)
             positions = connection.execute(
                 f"""
@@ -1250,7 +1359,32 @@ class MarketStore:
                 [resolved_at, market_id],
             )
 
+            create_successor = bool(market_row["is_frontend_visible"])
+            successor_token_mint = market_row["token_mint"]
+            successor_symbol = market_row["symbol"]
+            next_starting_price = successor_price_usd or parse_decimal(market_row["starting_price_usd"])
+
         catalog.resolve_market(market_id, outcome_state, resolved_at=resolved_at)
+        if not create_successor or next_starting_price is None:
+            return
+
+        with connect_database(self._database_path) as connection:
+            successor_market_id = self._create_market(
+                connection,
+                token_mint=successor_token_mint,
+                symbol=successor_symbol,
+                created_at=resolved_at,
+                starting_price_usd=next_starting_price,
+                is_frontend_visible=True,
+            )
+            connection.execute(
+                """
+                UPDATE markets
+                SET is_frontend_visible = 0, superseded_by_market_id = ?, superseded_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                [successor_market_id, resolved_at, resolved_at, market_id],
+            )
 
     def _quote_trade(
         self,
@@ -1453,25 +1587,39 @@ class MarketStore:
         yes_price_value = None if pool is None else yes_price(pool)
         yes_price_usd = None if yes_price_value is None else format_decimal(yes_price_value)
         no_price_usd = None if pool is None else format_decimal(no_price(pool))
+        starting_price = parse_decimal(row["starting_price_usd"])
+        threshold_price = parse_decimal(row["threshold_price_usd"])
+        current_observed_price = starting_price if latest_snapshot is None else parse_decimal(latest_snapshot["reference_price_usd"])
 
         return {
             "id": row["id"],
             "sequence_number": row["sequence_number"],
-            "question": row["question"],
+            "question": self._market_prompt(
+                symbol=row["symbol"],
+                current_price_usd=current_observed_price,
+                threshold_price_usd=threshold_price,
+                expiry=row["expiry"],
+                created_at=row["created_at"],
+            ),
             "state": row["state"],
             "market_start": row["market_start"],
             "expiry": row["expiry"],
             "liquidity_deposit_address": row["liquidity_deposit_address"],
             "resolved_at": row["resolved_at"],
             "created_at": row["created_at"],
+            "starting_price_usd": format_decimal(starting_price),
+            "threshold_price_usd": format_decimal(threshold_price),
+            "range_floor_price_usd": format_decimal(parse_decimal(row["range_floor_price_usd"])),
+            "range_ceiling_price_usd": format_decimal(parse_decimal(row["range_ceiling_price_usd"])),
+            "is_frontend_visible": bool(row["is_frontend_visible"]),
+            "superseded_by_market_id": row["superseded_by_market_id"],
+            "superseded_at": row["superseded_at"],
             "yes_price_usd": yes_price_usd,
             "no_price_usd": no_price_usd,
             "chance_of_outcome_percent": None if yes_price_value is None else self._chance_of_outcome_percent(yes_price_value),
-            "reference_price_usd": None if latest_snapshot is None else format_decimal(parse_decimal(latest_snapshot["reference_price_usd"])),
-            "ath_price_usd": None if latest_snapshot is None else format_decimal(parse_decimal(latest_snapshot["ath_price_usd"])),
-            "ath_timestamp": None if latest_snapshot is None else latest_snapshot["ath_timestamp"],
-            "drawdown_fraction": None if latest_snapshot is None else format_decimal(parse_decimal(latest_snapshot["drawdown_fraction"])),
-            "threshold_price_usd": None if latest_snapshot is None else format_decimal(parse_decimal(latest_snapshot["threshold_price_usd"])),
+            "reference_price_usd": format_decimal(current_observed_price),
+            "remaining_drop_percent": self._remaining_drop_percent(current_observed_price, threshold_price),
+            "drop_to_nuke_fraction": format_decimal(self._remaining_drop_fraction(current_observed_price, threshold_price)),
             "total_liquidity_usdc": None if pool is None else format_usdc_amount(pool.total_liquidity_atomic),
             "pm_volume_24h_usdc": format_usdc_amount(pm_volume_24h_atomic),
             "underlying_volume_24h_usd": None
@@ -1485,6 +1633,34 @@ class MarketStore:
     @staticmethod
     def _chance_of_outcome_percent(yes_price_value: Decimal) -> str:
         return f"{format_decimal(yes_price_value * Decimal('100'))}%"
+
+    def _market_prompt(
+        self,
+        *,
+        symbol: str,
+        current_price_usd: Decimal,
+        threshold_price_usd: Decimal,
+        expiry: str | None,
+        created_at: str,
+    ) -> str:
+        deadline = (
+            self._parse_timestamp(expiry).date().isoformat()
+            if expiry is not None
+            else (self._parse_timestamp(created_at) + self._market_duration).date().isoformat()
+        )
+        return f"Will {symbol} nuke by {self._remaining_drop_percent(current_price_usd, threshold_price_usd)} by {deadline}?"
+
+    @staticmethod
+    def _remaining_drop_fraction(current_price_usd: Decimal, threshold_price_usd: Decimal) -> Decimal:
+        if current_price_usd <= 0:
+            return Decimal("0")
+        remaining_drop_fraction = ONE - (threshold_price_usd / current_price_usd)
+        return max(Decimal("0"), remaining_drop_fraction)
+
+    @classmethod
+    def _remaining_drop_percent(cls, current_price_usd: Decimal, threshold_price_usd: Decimal) -> str:
+        percent_value = cls._remaining_drop_fraction(current_price_usd, threshold_price_usd) * Decimal("100")
+        return f"{format_decimal(percent_value.quantize(Decimal('0.01')))}%"
 
     def _serialize_current_market_chart(self, connection: sqlite3.Connection, current_market: sqlite3.Row) -> dict:
         return {
@@ -1517,7 +1693,7 @@ class MarketStore:
         if sort_by == "market_liquidity":
             value = current_market["total_liquidity_usdc"]
         elif sort_by == "dump_percentage":
-            value = current_market["drawdown_fraction"]
+            value = current_market["drop_to_nuke_fraction"]
         elif sort_by == "underlying_volume":
             value = current_market["underlying_volume_24h_usd"]
         elif sort_by == "underlying_market_cap":
@@ -1582,14 +1758,14 @@ class MarketStore:
             activity.append(
                 {
                     "timestamp": latest_snapshot["snapshot_hour"],
-                    "summary": f"Latest hourly reference price is {format_usd_display(latest_snapshot['reference_price_usd'])}.",
+                    "summary": f"Latest hourly token price is {format_usd_display(latest_snapshot['reference_price_usd'])}.",
                 }
             )
         elif current_market["state"] == "awaiting_liquidity":
             activity.append(
                 {
                     "timestamp": token_updated_at,
-                    "summary": "Waiting for the first market liquidity deposit before the 90 day window starts.",
+                    "summary": "Waiting for the first market liquidity deposit before trading opens.",
                 }
             )
         latest_trade = connection.execute(
@@ -1656,6 +1832,7 @@ class MarketStore:
                 SELECT current_market.id
                 FROM markets AS current_market
                 WHERE current_market.token_mint = tokens.mint
+                  AND current_market.is_frontend_visible = 1
                   AND current_market.state IN ('awaiting_liquidity', 'open', 'halted')
                 ORDER BY current_market.sequence_number DESC
                 LIMIT 1
@@ -1663,6 +1840,124 @@ class MarketStore:
             ORDER BY COALESCE(tokens.launched_at, tokens.created_at) DESC, tokens.symbol ASC
             """
         ).fetchall()
+
+    @staticmethod
+    def _frontend_visible_market_row(connection: sqlite3.Connection, token_mint: str) -> sqlite3.Row | None:
+        return connection.execute(
+            """
+            SELECT markets.*, tokens.symbol
+            FROM markets
+            JOIN tokens ON tokens.mint = markets.token_mint
+            WHERE markets.token_mint = ?
+              AND markets.is_frontend_visible = 1
+              AND markets.state IN ('awaiting_liquidity', 'open', 'halted')
+            ORDER BY markets.sequence_number DESC
+            LIMIT 1
+            """,
+            [token_mint],
+        ).fetchone()
+
+    def _create_market(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        token_mint: str,
+        symbol: str,
+        created_at: str,
+        starting_price_usd: Decimal,
+        is_frontend_visible: bool,
+    ) -> int:
+        next_sequence_number = connection.execute(
+            "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_sequence_number FROM markets WHERE token_mint = ?",
+            [token_mint],
+        ).fetchone()["next_sequence_number"]
+        expiry = (self._parse_timestamp(created_at) + self._market_duration).isoformat()
+        threshold_price_usd = starting_price_usd * self._resolution_threshold_fraction
+        range_floor_price_usd = starting_price_usd * self._rollover_lower_bound_fraction
+        range_ceiling_price_usd = starting_price_usd * self._rollover_upper_bound_fraction
+
+        if is_frontend_visible:
+            connection.execute(
+                """
+                UPDATE markets
+                SET is_frontend_visible = 0, updated_at = ?
+                WHERE token_mint = ?
+                  AND is_frontend_visible = 1
+                  AND state IN ('awaiting_liquidity', 'open', 'halted')
+                """,
+                [created_at, token_mint],
+            )
+
+        return connection.execute(
+            """
+            INSERT INTO markets (
+                token_mint,
+                sequence_number,
+                question,
+                state,
+                market_start,
+                expiry,
+                liquidity_deposit_address,
+                resolved_at,
+                starting_price_usd,
+                threshold_price_usd,
+                range_floor_price_usd,
+                range_ceiling_price_usd,
+                is_frontend_visible,
+                superseded_by_market_id,
+                superseded_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, 'awaiting_liquidity', NULL, ?, NULL, NULL, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+            RETURNING id
+            """,
+            [
+                token_mint,
+                next_sequence_number,
+                seed_market_question(symbol),
+                expiry,
+                format_decimal(starting_price_usd),
+                format_decimal(threshold_price_usd),
+                format_decimal(range_floor_price_usd),
+                format_decimal(range_ceiling_price_usd),
+                1 if is_frontend_visible else 0,
+                created_at,
+                created_at,
+            ],
+        ).fetchone()["id"]
+
+    def _create_successor_market(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        market_row: sqlite3.Row,
+        starting_price_usd: Decimal,
+        created_at: str,
+    ) -> int:
+        successor_market_id = self._create_market(
+            connection,
+            token_mint=market_row["token_mint"],
+            symbol=market_row["symbol"],
+            created_at=created_at,
+            starting_price_usd=starting_price_usd,
+            is_frontend_visible=True,
+        )
+        connection.execute(
+            """
+            UPDATE markets
+            SET is_frontend_visible = 0, superseded_by_market_id = ?, superseded_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            [successor_market_id, created_at, created_at, market_row["id"]],
+        )
+        return successor_market_id
+
+    @staticmethod
+    def _price_outside_rollover_range(reference_price: Decimal, market_row: sqlite3.Row) -> bool:
+        return reference_price < parse_decimal(market_row["range_floor_price_usd"]) or reference_price > parse_decimal(
+            market_row["range_ceiling_price_usd"]
+        )
 
     @staticmethod
     def _market_volume_24h_by_market_id(
@@ -1775,8 +2070,6 @@ class MarketStore:
 
         pool = self._load_pool(connection, market_id, required=False)
         if pool is None:
-            opened_at = self._parse_timestamp(credited_at)
-            expiry = (opened_at + self._market_duration).isoformat()
             connection.execute(
                 """
                 INSERT INTO market_pools (
@@ -1797,10 +2090,10 @@ class MarketStore:
             connection.execute(
                 """
                 UPDATE markets
-                SET state = 'open', market_start = ?, expiry = ?, updated_at = ?
+                SET state = 'open', market_start = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                [credited_at, expiry, credited_at, market_id],
+                [credited_at, credited_at, market_id],
             )
             return Decimal("0.5")
 
@@ -2020,6 +2313,16 @@ class MarketStore:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
+
+    @staticmethod
+    def _ensure_market_column(connection: sqlite3.Connection, column_name: str, column_definition: str) -> None:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(markets)").fetchall()
+        }
+        if column_name in columns:
+            return
+        connection.execute(f"ALTER TABLE markets ADD COLUMN {column_name} {column_definition}")
 
     @staticmethod
     def _outstanding_treasury_debt_atomic(connection: sqlite3.Connection) -> int:

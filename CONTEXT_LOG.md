@@ -74,3 +74,10 @@
 
 - The token detail overlay chart uses its own `market_chart_snapshots` table and operator job instead of reusing hourly settlement snapshots. That separation is intentional: the chart is a 5-minute trader-facing read, while hourly settlement snapshots remain the canonical resolution/reference path.
 - Each chart row stores both the current token USD price and the current market `YES` probability at the same bucketed timestamp so the frontend can render one aligned dual-axis overlay without stitching together mismatched histories at read time.
+
+## Fixed-Anchor Market Lifecycle
+
+- New markets are no longer created blindly during catalog ingest. They are created from a real observed token price during token-metric capture so every market row can stamp fixed anchors up front.
+- Each market now stores `starting_price_usd`, `threshold_price_usd`, `range_floor_price_usd`, and `range_ceiling_price_usd` on the market row itself. The old ATH/drawdown threshold logic is no longer the active lifecycle rule.
+- Only one active market per token is frontend-visible. When that visible market's monitored price moves outside its configured range, the frontend rolls to a new successor market while the older market stays active, tradable, and publicly inspectable through `hidden_active_markets`.
+- The visible prompt is computed at read time as `Will {symbol} nuke by {x}% by {date}?` using the latest monitored price for that market rather than a permanently stored question string.

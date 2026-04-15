@@ -1,4 +1,5 @@
 from pathlib import Path
+from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
@@ -8,6 +9,7 @@ from nukefm.bags import BagsToken
 from nukefm.catalog import Catalog
 from nukefm.config import Settings
 from nukefm.database import connect_database
+from nukefm.dexscreener import DexScreenerPair
 from nukefm.markets import MarketStore
 from nukefm.treasury import DepositAccountAddresses
 
@@ -20,6 +22,14 @@ class FakeTreasury:
         )
 
 
+class FakeDexScreenerClient:
+    def __init__(self, pairs_by_mint: dict[str, list[DexScreenerPair]]) -> None:
+        self._pairs_by_mint = pairs_by_mint
+
+    def list_token_pairs(self, token_mint: str) -> list[DexScreenerPair]:
+        return self._pairs_by_mint[token_mint]
+
+
 def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     log_path = tmp_path / "logs" / "app.log"
@@ -30,7 +40,9 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
         frontend_refresh_seconds=30,
         api_challenge_ttl_seconds=300,
         market_duration_days=90,
-        market_threshold_fraction="0.05",
+        market_resolution_threshold_fraction="0.10",
+        market_rollover_lower_bound_fraction="0.25",
+        market_rollover_upper_bound_fraction="4.0",
         bags_base_url="https://public-api-v2.bags.fm/api/v1",
         bags_launch_feed_path="/token-launch/feed",
         bags_api_key=None,
@@ -75,6 +87,43 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
 
     market_store = MarketStore(database_path)
     market_store.initialize()
+    market_store.capture_token_metrics(
+        FakeDexScreenerClient(
+            {
+                "Mint111": [
+                    DexScreenerPair(
+                        pair_address="alpha-pair",
+                        dex_id="raydium",
+                        price_usd=Decimal("1.5"),
+                        liquidity_usd=Decimal("100"),
+                        volume_h24_usd=Decimal("10"),
+                        market_cap_usd=Decimal("1000"),
+                    )
+                ],
+                "Mint333": [
+                    DexScreenerPair(
+                        pair_address="gamma-pair",
+                        dex_id="raydium",
+                        price_usd=Decimal("0.00000000045"),
+                        liquidity_usd=Decimal("80"),
+                        volume_h24_usd=Decimal("4"),
+                        market_cap_usd=Decimal("0.000000000321"),
+                    )
+                ],
+                "Mint555": [
+                    DexScreenerPair(
+                        pair_address="omega-pair",
+                        dex_id="raydium",
+                        price_usd=Decimal("3"),
+                        liquidity_usd=Decimal("60"),
+                        volume_h24_usd=Decimal("2"),
+                        market_cap_usd=Decimal("900"),
+                    )
+                ],
+            }
+        ),
+        captured_at="2026-04-15T12:15:00+00:00",
+    )
     treasury = FakeTreasury()
     market_store.ensure_missing_market_liquidity_accounts(treasury)
 
@@ -245,6 +294,9 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert detail_api_market["underlying_market_cap_usd"] == "0.000000000321"
     assert detail_api_market["pm_volume_24h_usdc"] == "1"
     assert detail_api_market["chance_of_outcome_percent"] == "50%"
+    assert detail_api_market["remaining_drop_percent"] == "63.41%"
+    assert detail_api_market["question"] == "Will GAMMA nuke by 63.41% by 2026-07-14?"
+    assert detail_api_response.json()["hidden_active_markets"] == []
     assert detail_api_response.json()["current_market_chart"] == {
         "market_id": gamma_market_id,
         "interval_minutes": 5,
@@ -264,7 +316,7 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
 
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
-    assert "Will GAMMA nuke by 90 days after this market opens?" in detail_response.text
+    assert "Will GAMMA nuke by 63.41% by 2026-07-14?" in detail_response.text
     assert "PM 24h volume" in detail_response.text
     assert "Chance of nuke" in detail_response.text
     assert "Token price vs chance of nuke" in detail_response.text
@@ -299,7 +351,9 @@ def test_board_toggle_stays_visible_when_all_markets_are_uninitialized(tmp_path:
         frontend_refresh_seconds=30,
         api_challenge_ttl_seconds=300,
         market_duration_days=90,
-        market_threshold_fraction="0.05",
+        market_resolution_threshold_fraction="0.10",
+        market_rollover_lower_bound_fraction="0.25",
+        market_rollover_upper_bound_fraction="4.0",
         bags_base_url="https://public-api-v2.bags.fm/api/v1",
         bags_launch_feed_path="/token-launch/feed",
         bags_api_key=None,
@@ -328,6 +382,23 @@ def test_board_toggle_stays_visible_when_all_markets_are_uninitialized(tmp_path:
 
     market_store = MarketStore(database_path)
     market_store.initialize()
+    market_store.capture_token_metrics(
+        FakeDexScreenerClient(
+            {
+                "Mint777": [
+                    DexScreenerPair(
+                        pair_address="seven-pair",
+                        dex_id="raydium",
+                        price_usd=Decimal("2"),
+                        liquidity_usd=Decimal("50"),
+                        volume_h24_usd=Decimal("5"),
+                        market_cap_usd=Decimal("700"),
+                    )
+                ]
+            }
+        ),
+        captured_at="2026-04-17T12:01:00+00:00",
+    )
     app = create_app(settings=settings, catalog=catalog, market_store=market_store)
     client = TestClient(app)
 

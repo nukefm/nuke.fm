@@ -71,7 +71,9 @@ def main() -> None:
     market_store = MarketStore(
         settings.database_path,
         market_duration_days=settings.market_duration_days,
-        threshold_fraction=Decimal(settings.market_threshold_fraction),
+        resolution_threshold_fraction=Decimal(settings.market_resolution_threshold_fraction),
+        rollover_lower_bound_fraction=Decimal(settings.market_rollover_lower_bound_fraction),
+        rollover_upper_bound_fraction=Decimal(settings.market_rollover_upper_bound_fraction),
     )
     market_store.initialize()
     treasury: SolanaTreasury | None = None
@@ -164,8 +166,15 @@ def main() -> None:
         api_key=settings.bags_api_key,
     )
     ingested_count = catalog.ingest_tokens(client.list_tokens(limit=arguments.limit))
+    captured_metrics = market_store.capture_token_metrics(
+        JupiterTokensClient(base_url=settings.jupiter_tokens_base_url),
+    )
     market_store.ensure_missing_market_liquidity_accounts(get_treasury())
-    logger.info(f"Ingested {ingested_count} Bags tokens into the market catalog.")
+    logger.info(
+        "Ingested {} Bags tokens into the market catalog and refreshed {} token metric snapshots.",
+        ingested_count,
+        len(captured_metrics),
+    )
 
 
 if __name__ == "__main__":

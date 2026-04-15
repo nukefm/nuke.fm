@@ -9,8 +9,9 @@ from .database import connect_database, utc_now
 
 ACTIVE_MARKET_STATES = {"awaiting_liquidity", "open", "halted"}
 
-def market_question(symbol: str) -> str:
-    return f"Will {symbol} nuke by 90 days after this market opens?"
+
+def seed_market_question(symbol: str) -> str:
+    return f"Will {symbol} nuke?"
 
 
 def display_market_state(state: str) -> str:
@@ -48,57 +49,32 @@ class Catalog:
                     expiry TEXT,
                     liquidity_deposit_address TEXT,
                     resolved_at TEXT,
+                    starting_price_usd TEXT,
+                    threshold_price_usd TEXT,
+                    range_floor_price_usd TEXT,
+                    range_ceiling_price_usd TEXT,
+                    is_frontend_visible INTEGER NOT NULL DEFAULT 1,
+                    superseded_by_market_id INTEGER REFERENCES markets(id) ON DELETE SET NULL,
+                    superseded_at TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(token_mint, sequence_number)
                 );
                 """
             )
+            self._ensure_market_column(connection, "starting_price_usd", "TEXT")
+            self._ensure_market_column(connection, "threshold_price_usd", "TEXT")
+            self._ensure_market_column(connection, "range_floor_price_usd", "TEXT")
+            self._ensure_market_column(connection, "range_ceiling_price_usd", "TEXT")
+            self._ensure_market_column(connection, "is_frontend_visible", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_market_column(connection, "superseded_by_market_id", "INTEGER REFERENCES markets(id) ON DELETE SET NULL")
+            self._ensure_market_column(connection, "superseded_at", "TEXT")
 
     def ingest_tokens(self, tokens: list[BagsToken]) -> int:
-        ingested_count = 0
         with connect_database(self._database_path) as connection:
             for token in tokens:
                 self._upsert_token(connection, token)
-                self._ensure_current_market(connection, token)
-                ingested_count += 1
-        return ingested_count
-
-    def list_token_cards(self) -> list[dict]:
-        with connect_database(self._database_path) as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                    tokens.mint,
-                    tokens.symbol,
-                    tokens.name,
-                    tokens.image_url,
-                    tokens.launched_at,
-                    markets.id,
-                    markets.sequence_number,
-                    markets.question,
-                    markets.state,
-                    markets.market_start,
-                    markets.expiry,
-                    markets.liquidity_deposit_address,
-                    markets.resolved_at,
-                    markets.created_at
-                FROM tokens
-                JOIN markets
-                  ON markets.token_mint = tokens.mint
-                WHERE markets.id = (
-                    SELECT id
-                    FROM markets AS current_market
-                    WHERE current_market.token_mint = tokens.mint
-                      AND current_market.state IN ('awaiting_liquidity', 'open', 'halted')
-                    ORDER BY current_market.sequence_number DESC
-                    LIMIT 1
-                )
-                ORDER BY COALESCE(tokens.launched_at, tokens.created_at) DESC, tokens.symbol ASC
-                """
-            ).fetchall()
-
-        return [self._serialize_token_card(row) for row in rows]
+        return len(tokens)
 
     def get_token_detail(self, mint: str) -> dict | None:
         with connect_database(self._database_path) as connection:
@@ -113,17 +89,18 @@ class Catalog:
             if token_row is None:
                 return None
 
-            current_market = connection.execute(
+            current_market = self._frontend_visible_market(connection, mint)
+            hidden_active_markets = connection.execute(
                 """
                 SELECT *
                 FROM markets
                 WHERE token_mint = ?
+                  AND is_frontend_visible = 0
                   AND state IN ('awaiting_liquidity', 'open', 'halted')
                 ORDER BY sequence_number DESC
-                LIMIT 1
                 """,
                 [mint],
-            ).fetchone()
+            ).fetchall()
             past_markets = connection.execute(
                 """
                 SELECT *
@@ -135,9 +112,6 @@ class Catalog:
                 [mint],
             ).fetchall()
 
-        if current_market is None:
-            return None
-
         return {
             "mint": token_row["mint"],
             "symbol": token_row["symbol"],
@@ -145,9 +119,12 @@ class Catalog:
             "image_url": token_row["image_url"],
             "launched_at": token_row["launched_at"],
             "creator": token_row["creator"],
-            "current_market": self._serialize_market(current_market),
+            "current_market": None if current_market is None else self._serialize_market(current_market),
+            "hidden_active_markets": [self._serialize_market(row) for row in hidden_active_markets],
             "past_markets": [self._serialize_market(row) for row in past_markets],
-            "recent_activity": self._recent_activity(self._serialize_market(current_market), token_row["updated_at"]),
+            "recent_activity": []
+            if current_market is None
+            else self._recent_activity(self._serialize_market(current_market), token_row["updated_at"]),
         }
 
     def resolve_market(self, market_id: int, outcome_state: str, resolved_at: str | None = None) -> None:
@@ -157,7 +134,7 @@ class Catalog:
         resolved_timestamp = resolved_at or utc_now()
         with connect_database(self._database_path) as connection:
             market = connection.execute(
-                "SELECT * FROM markets WHERE id = ?",
+                "SELECT state FROM markets WHERE id = ?",
                 [market_id],
             ).fetchone()
             if market is None:
@@ -172,21 +149,6 @@ class Catalog:
                 WHERE id = ?
                 """,
                 [outcome_state, resolved_timestamp, resolved_timestamp, market_id],
-            )
-            token = connection.execute(
-                "SELECT mint, symbol FROM tokens WHERE mint = ?",
-                [market["token_mint"]],
-            ).fetchone()
-            self._ensure_current_market(
-                connection,
-                BagsToken(
-                    mint=token["mint"],
-                    name="",
-                    symbol=token["symbol"],
-                    image_url=None,
-                    launched_at=None,
-                    creator=None,
-                ),
             )
 
     def _upsert_token(self, connection: sqlite3.Connection, token: BagsToken) -> None:
@@ -224,54 +186,20 @@ class Catalog:
             ],
         )
 
-    def _ensure_current_market(self, connection: sqlite3.Connection, token: BagsToken) -> None:
-        active_market = connection.execute(
+    @staticmethod
+    def _frontend_visible_market(connection: sqlite3.Connection, mint: str) -> sqlite3.Row | None:
+        return connection.execute(
             """
-            SELECT id
+            SELECT *
             FROM markets
             WHERE token_mint = ?
+              AND is_frontend_visible = 1
               AND state IN ('awaiting_liquidity', 'open', 'halted')
             ORDER BY sequence_number DESC
             LIMIT 1
             """,
-            [token.mint],
+            [mint],
         ).fetchone()
-        if active_market is not None:
-            return
-
-        next_sequence_number = connection.execute(
-            "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_sequence_number FROM markets WHERE token_mint = ?",
-            [token.mint],
-        ).fetchone()["next_sequence_number"]
-        timestamp = utc_now()
-        connection.execute(
-            """
-            INSERT INTO markets (
-                token_mint,
-                sequence_number,
-                question,
-                state,
-                market_start,
-                expiry,
-                liquidity_deposit_address,
-                resolved_at,
-                created_at,
-                updated_at
-            )
-            VALUES (?, ?, ?, 'awaiting_liquidity', NULL, NULL, NULL, NULL, ?, ?)
-            """,
-            [token.mint, next_sequence_number, market_question(token.symbol), timestamp, timestamp],
-        )
-
-    def _serialize_token_card(self, row: sqlite3.Row) -> dict:
-        return {
-            "mint": row["mint"],
-            "symbol": row["symbol"],
-            "name": row["name"],
-            "image_url": row["image_url"],
-            "launched_at": row["launched_at"],
-            "current_market": self._serialize_market(row),
-        }
 
     @staticmethod
     def _serialize_market(row: sqlite3.Row) -> dict:
@@ -285,13 +213,17 @@ class Catalog:
             "liquidity_deposit_address": row["liquidity_deposit_address"],
             "resolved_at": row["resolved_at"],
             "created_at": row["created_at"],
+            "starting_price_usd": row["starting_price_usd"],
+            "threshold_price_usd": row["threshold_price_usd"],
+            "range_floor_price_usd": row["range_floor_price_usd"],
+            "range_ceiling_price_usd": row["range_ceiling_price_usd"],
+            "is_frontend_visible": bool(row["is_frontend_visible"]),
+            "superseded_by_market_id": row["superseded_by_market_id"],
+            "superseded_at": row["superseded_at"],
             "yes_price_usd": None,
             "no_price_usd": None,
             "reference_price_usd": None,
-            "ath_price_usd": None,
-            "ath_timestamp": None,
-            "drawdown_fraction": None,
-            "threshold_price_usd": None,
+            "chance_of_outcome_percent": None,
         }
 
     @staticmethod
@@ -306,7 +238,17 @@ class Catalog:
             activity.append(
                 {
                     "timestamp": token_updated_at,
-                    "summary": "Waiting for the first market liquidity deposit before the 90 day window starts.",
+                    "summary": "Waiting for the first market liquidity deposit before trading opens.",
                 }
             )
         return activity
+
+    @staticmethod
+    def _ensure_market_column(connection: sqlite3.Connection, column_name: str, column_definition: str) -> None:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(markets)").fetchall()
+        }
+        if column_name in columns:
+            return
+        connection.execute(f"ALTER TABLE markets ADD COLUMN {column_name} {column_definition}")

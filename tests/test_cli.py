@@ -52,11 +52,21 @@ def test_snapshot_market_charts_runs_chart_capture(monkeypatch) -> None:
             captured["account_initialized"] = True
 
     class FakeMarketStore:
-        def __init__(self, database_path, *, market_duration_days, threshold_fraction) -> None:
+        def __init__(
+            self,
+            database_path,
+            *,
+            market_duration_days,
+            resolution_threshold_fraction,
+            rollover_lower_bound_fraction,
+            rollover_upper_bound_fraction,
+        ) -> None:
             captured["market_store_init"] = {
                 "database_path": database_path,
                 "market_duration_days": market_duration_days,
-                "threshold_fraction": threshold_fraction,
+                "resolution_threshold_fraction": resolution_threshold_fraction,
+                "rollover_lower_bound_fraction": rollover_lower_bound_fraction,
+                "rollover_upper_bound_fraction": rollover_upper_bound_fraction,
             }
 
         def initialize(self) -> None:
@@ -74,7 +84,9 @@ def test_snapshot_market_charts_runs_chart_capture(monkeypatch) -> None:
                 "log_path": "logs/test.log",
                 "database_path": "data/test.sqlite3",
                 "market_duration_days": 90,
-                "market_threshold_fraction": "0.05",
+                "market_resolution_threshold_fraction": "0.10",
+                "market_rollover_lower_bound_fraction": "0.25",
+                "market_rollover_upper_bound_fraction": "4.0",
                 "jupiter_tokens_base_url": "https://jup.test/tokens",
             },
         )()

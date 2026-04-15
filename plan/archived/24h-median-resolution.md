@@ -68,3 +68,11 @@ Replace the current spot-price-based settlement path with a manipulation-resista
 ## Unresolved Questions
 
 - None for planning. During implementation, the only practical decision to finalize is whether token-wide Bitquery trade queries are clean enough on their own or whether the Bags pools endpoint should be used as a venue allowlist.
+
+## Status
+
+- Completed on the coordinator branch after integrating the dedicated worktree commit.
+- Implemented a Bitquery-backed settlement client and switched hourly settlement snapshots to rolling 24-hour median prices clipped to `max(market_start, snapshot_hour - 24h)`.
+- Fixed market resolution to scan historical hourly snapshots so an earlier qualifying threshold breach still resolves `YES`.
+- Updated config/runtime docs for `BITQUERY_API_KEY`.
+- Validation completed with `uv run --env-file .env pytest`.

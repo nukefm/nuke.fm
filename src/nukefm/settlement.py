@@ -22,7 +22,7 @@ class BitquerySettlementPriceClient(SettlementPriceClient):
             {
                 "Accept": "application/json",
                 "Content-Type": "application/json",
-                "X-API-KEY": api_key,
+                "Authorization": f"Bearer {api_key}",
             }
         )
 

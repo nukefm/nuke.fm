@@ -106,6 +106,7 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
 
     page_response = client.get("/?sort_by=market_liquidity&sort_direction=desc")
     assert page_response.status_code == 200
+    assert 'rel="icon" type="image/svg+xml" href="http://testserver/static/favicon.svg"' in page_response.text
     assert 'option value="market_liquidity" selected' in page_response.text
     assert 'option value="desc" selected' in page_response.text
     assert page_response.text.index("<p class=\"symbol-badge\">ALPHA</p>") < page_response.text.index(
@@ -123,6 +124,10 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
     assert "Will GAMMA nuke by 90 days after this market opens?" in detail_response.text
+
+    favicon_response = client.get("/static/favicon.svg")
+    assert favicon_response.status_code == 200
+    assert "<svg" in favicon_response.text
 
 
 def test_board_toggle_stays_visible_when_all_markets_are_uninitialized(tmp_path: Path) -> None:

@@ -854,6 +854,8 @@ class MarketStore:
                 if next_snapshot_hour > finalized_hour:
                     continue
 
+                # The settlement series intentionally uses the full trailing 24h token window,
+                # including pre-market prints for newly opened markets.
                 window_start_time = next_snapshot_hour - timedelta(hours=24)
                 try:
                     reference_price = price_client.get_rolling_median_price(

@@ -102,7 +102,7 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert page_response.text.index("<p class=\"symbol-badge\">ALPHA</p>") < page_response.text.index(
         "<p class=\"symbol-badge\">GAMMA</p>"
     )
-    assert "Read the market board. Trade somewhere else." in page_response.text
+    assert "See which token markets are actionable right now." in page_response.text
 
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200

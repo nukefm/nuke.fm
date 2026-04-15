@@ -56,7 +56,7 @@ copy_secret() {
         exit 1
     fi
 
-    printf '%s' "${secret_value}" | ssh "${ssh_args[@]}" "${remote}" "bash -lc 'source ${remote_runtime} && ${remote_root}/ops/ec2/store-secret.sh ${secret_name}'"
+    printf '%s' "${secret_value}" | ssh "${ssh_args[@]}" "${remote}" "bash -lc 'set -a; source ${remote_runtime}; set +a; ${remote_root}/ops/ec2/store-secret.sh ${secret_name}'"
 }
 
 copy_secret deposit-master-seed

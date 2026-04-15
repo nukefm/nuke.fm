@@ -1,5 +1,8 @@
 # ignore for now
 - deferred: calibrate period and drawdown % from historical data
-- create trading bot
+- create noise trading bot
 - improve ui a lot. it kinda sucks rn
 - improve wording. currently it is somewhat slop
+- debug why mktcap sorting is incorrect 
+- figure out how to regularise rug predictions
+- debug: "Run the 5 minute `snapshot-market-charts` job after the market is live to populate this overlay."

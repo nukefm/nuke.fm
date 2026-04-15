@@ -19,3 +19,4 @@
 - The first shipped slice uses a local SQLite catalog with FastAPI and Jinja templates. It ingests Bags launch-feed metadata, creates one current market per token, and renders that catalog through both HTML pages and `/v1/public` JSON.
 - Current-market price, liquidity-address, reference-price, ATH, drawdown, and threshold fields remain explicitly `null` in the public API until the later AMM, liquidity, and settlement deliverables exist. They are not inferred or synthesized.
 - The Bags launch-feed route is configurable through `config.json` as `bags_launch_feed_path` because the docs clearly expose the feed concept but the concrete path may shift over time.
+- The live Bags launch feed currently rejects query parameters such as `limit`. Fetch the feed without query parameters, then truncate locally after parsing the `response` array.

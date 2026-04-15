@@ -55,3 +55,11 @@ For these markets, that means showing the chance that the token will nuke rather
 ## Unresolved Questions
 
 - None for planning.
+
+## Status
+
+- Completed on the coordinator branch after integrating the dedicated worktree commit.
+- Added a public `chance_of_outcome_percent` field derived from the YES-side market price.
+- Removed raw YES/NO price presentation from the public HTML pages in favor of `chance of` wording.
+- Left raw YES/NO pricing intact on the serialized market payload for non-UI consumers.
+- Validation completed with `uv run pytest`.

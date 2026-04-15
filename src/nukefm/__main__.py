@@ -11,9 +11,9 @@ from .app import create_app
 from .bags import BagsClient
 from .catalog import Catalog
 from .config import load_settings
-from .dexscreener import DexScreenerClient
 from .logging_utils import configure_logging
 from .markets import MarketStore
+from .settlement import BitquerySettlementPriceClient
 from .treasury import SolanaTreasury
 
 
@@ -79,8 +79,10 @@ def main() -> None:
         return
 
     if arguments.command == "snapshot-markets":
+        if settings.bitquery_api_key is None:
+            raise SystemExit("BITQUERY_API_KEY is required to snapshot markets from settlement trade data.")
         snapshots = market_store.capture_hourly_snapshots(
-            DexScreenerClient(base_url=settings.dexscreener_base_url),
+            BitquerySettlementPriceClient(api_key=settings.bitquery_api_key),
         )
         logger.info(f"Captured {len(snapshots)} market snapshot updates.")
         return

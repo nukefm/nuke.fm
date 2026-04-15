@@ -16,9 +16,9 @@ This repository currently includes these MVP slices:
 - run a weighted YES/NO AMM per open market
 - reconcile one-way market liquidity deposits into pool depth and cash backing
 - quote and execute API-only trades against the weighted pool
-- capture hourly reference-price snapshots from DexScreener pair data
-- track per-market ATH, threshold, and drawdown
-- resolve markets, pay winning accounts, roll the next market forward, and record revenue sweeps
+- capture hourly settlement snapshots from a rolling 24h median of historical trade prices
+- track per-market ATH, threshold, and drawdown from those median prices
+- resolve markets from stored historical snapshots, pay winning accounts, roll the next market forward, and record revenue sweeps
 - expose that catalog through a public JSON API
 - render the same catalog through a read-only web frontend
 - bootstrap private API access with Solana wallet signatures and API keys
@@ -55,9 +55,9 @@ the backend uses an integer binary search to find the largest exact USDC redempt
 funded without inventing opposite-side dust. If atomic rounding prevents filling the full requested
 share amount exactly, the response reports the small unfilled remainder explicitly.
 
-Fourth, the settlement loop captures hourly liquidity-weighted token prices from DexScreener,
-tracks each market's own ATH and 95% drawdown threshold, and resolves to `YES` or `NO` from stored
-snapshots instead of a live price lookup at resolution time.
+Fourth, the settlement loop captures hourly rolling 24h median reference prices from historical
+trade data, tracks each market's own ATH and 95% drawdown threshold from that median series, and
+resolves to `YES` or `NO` from stored snapshots instead of a live price lookup at resolution time.
 
 Fifth, the auth layer issues one-time challenges, verifies Solana wallet signatures, and mints
 API keys for private access.
@@ -91,7 +91,8 @@ MVP. Important current constraints:
 - Python 3.13
 - `BAGS_API_KEY` in `.env` for feed ingestion
 - `secret-tool` entries for the deposit master seed and treasury seed
-- network access to DexScreener for hourly snapshot jobs
+- network access to Bitquery for hourly settlement snapshot jobs
+- `BITQUERY_API_KEY` in `.env` for settlement snapshot jobs
 
 ## Commands
 

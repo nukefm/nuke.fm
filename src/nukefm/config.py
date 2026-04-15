@@ -30,6 +30,7 @@ class Settings:
     secret_tool_service: str
     deposit_master_seed_secret_name: str
     treasury_seed_secret_name: str
+    bitquery_api_key: str | None = None
 
 
 def load_settings() -> Settings:
@@ -53,4 +54,5 @@ def load_settings() -> Settings:
         secret_tool_service=config["secret_tool_service"],
         deposit_master_seed_secret_name=config["deposit_master_seed_secret_name"],
         treasury_seed_secret_name=config["treasury_seed_secret_name"],
+        bitquery_api_key=os.getenv("BITQUERY_API_KEY") or None,
     )

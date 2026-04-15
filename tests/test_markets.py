@@ -5,7 +5,6 @@ from nukefm.accounts import AccountStore
 from nukefm.bags import BagsToken
 from nukefm.catalog import Catalog
 from nukefm.database import connect_database
-from nukefm.dexscreener import DexScreenerPair
 from nukefm.markets import MarketStore
 from nukefm.treasury import DepositAccountAddresses
 
@@ -31,12 +30,14 @@ class FakeTreasury:
         return processed
 
 
-class FakePriceClient:
-    def __init__(self, snapshots: list[list[DexScreenerPair]]) -> None:
+class FakeSettlementPriceClient:
+    def __init__(self, snapshots: list[Decimal]) -> None:
         self._snapshots = snapshots
         self._index = 0
+        self.calls: list[dict[str, str]] = []
 
-    def list_token_pairs(self, token_mint: str) -> list[DexScreenerPair]:
+    def get_rolling_median_price(self, token_mint: str, *, start_at: str, end_at: str) -> Decimal:
+        self.calls.append({"token_mint": token_mint, "start_at": start_at, "end_at": end_at})
         snapshot = self._snapshots[self._index]
         self._index += 1
         return snapshot
@@ -73,7 +74,7 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
         market_id=market_id,
         amount_atomic=20_000_000,
         observed_balance_after_atomic=20_000_000,
-        credited_at="2026-04-15T12:00:00+00:00",
+        credited_at="2026-04-14T13:30:00+00:00",
     )
 
     with connect_database(database_path) as connection:
@@ -102,33 +103,66 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     )
     assert buy_trade["share_amount"] != "0"
 
-    price_client = FakePriceClient(
+    price_client = FakeSettlementPriceClient(
         [
-            [
-                DexScreenerPair(
-                    pair_address="pair-1",
-                    dex_id="raydium",
-                    price_usd=Decimal("10"),
-                    liquidity_usd=Decimal("100000"),
-                )
-            ],
-            [
-                DexScreenerPair(
-                    pair_address="pair-1",
-                    dex_id="raydium",
-                    price_usd=Decimal("0.4"),
-                    liquidity_usd=Decimal("100000"),
-                )
-            ],
+            Decimal("10"),
+            Decimal("0.4"),
+            Decimal("0.8"),
         ]
     )
 
     market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T13:00:00+00:00")
     market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T14:00:00+00:00")
+    market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T15:00:00+00:00")
+
+    assert price_client.calls == [
+        {
+            "token_mint": "Mint555",
+            "start_at": "2026-04-14T13:30:00+00:00",
+            "end_at": "2026-04-15T13:00:00+00:00",
+        },
+        {
+            "token_mint": "Mint555",
+            "start_at": "2026-04-14T14:00:00+00:00",
+            "end_at": "2026-04-15T14:00:00+00:00",
+        },
+        {
+            "token_mint": "Mint555",
+            "start_at": "2026-04-14T15:00:00+00:00",
+            "end_at": "2026-04-15T15:00:00+00:00",
+        },
+    ]
+
+    with connect_database(database_path) as connection:
+        snapshot_rows = connection.execute(
+            """
+            SELECT snapshot_hour, reference_price_usd, ath_price_usd, drawdown_fraction, threshold_price_usd
+            FROM market_snapshots
+            WHERE market_id = ?
+            ORDER BY snapshot_hour ASC
+            """,
+            [market_id],
+        ).fetchall()
+
+    assert [
+        (
+            row["snapshot_hour"],
+            row["reference_price_usd"],
+            row["ath_price_usd"],
+            row["drawdown_fraction"],
+            row["threshold_price_usd"],
+        )
+        for row in snapshot_rows
+    ] == [
+        ("2026-04-15T13:00:00+00:00", "10", "10", "0", "0.50"),
+        ("2026-04-15T14:00:00+00:00", "0.4", "10", "0.96", "0.50"),
+        ("2026-04-15T15:00:00+00:00", "0.8", "10", "0.92", "0.50"),
+    ]
+
     resolved = market_store.resolve_markets(
         catalog=catalog,
         treasury=treasury,
-        resolved_at="2026-04-15T14:05:00+00:00",
+        resolved_at="2026-04-15T15:05:00+00:00",
     )
 
     assert resolved == [{"market_id": market_id, "state": "resolved_yes", "resolved_at": "2026-04-15T14:00:00+00:00"}]

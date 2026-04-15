@@ -8,6 +8,7 @@ import sqlite3
 from .amounts import format_usdc_amount
 from .catalog import ACTIVE_MARKET_STATES
 from .database import connect_database, utc_now
+from .settlement import SettlementPriceClient
 from .weighted_pool import (
     ONE,
     WeightedPoolState,
@@ -595,15 +596,21 @@ class MarketStore:
                 "no_price_usd": format_decimal(ONE - yes_price_usd),
             }
 
-    def capture_hourly_snapshots(self, price_client, *, captured_at: str | None = None) -> list[dict]:
+    def capture_hourly_snapshots(
+        self,
+        price_client: SettlementPriceClient,
+        *,
+        captured_at: str | None = None,
+    ) -> list[dict]:
         captured_timestamp = captured_at or utc_now()
         snapshot_hour = self._snapshot_hour(captured_timestamp)
+        snapshot_time = self._parse_timestamp(snapshot_hour)
         captured_rows: list[dict] = []
 
         with connect_database(self._database_path) as connection:
             market_rows = connection.execute(
                 """
-                SELECT markets.id, markets.token_mint, markets.state
+                SELECT markets.id, markets.token_mint, markets.market_start, markets.state
                 FROM markets
                 WHERE markets.state IN ('open', 'halted')
                 ORDER BY markets.id ASC
@@ -611,17 +618,17 @@ class MarketStore:
             ).fetchall()
 
             for market_row in market_rows:
-                pairs = price_client.list_token_pairs(market_row["token_mint"])
-                if not pairs:
-                    connection.execute(
-                        "UPDATE markets SET state = 'halted', updated_at = ? WHERE id = ?",
-                        [captured_timestamp, market_row["id"]],
-                    )
-                    captured_rows.append({"market_id": market_row["id"], "state": "halted"})
-                    continue
+                market_start = market_row["market_start"]
+                if market_start is None:
+                    raise ValueError(f"Market {market_row['id']} is missing market_start and cannot be snapshotted.")
 
-                total_liquidity = sum(pair.liquidity_usd for pair in pairs)
-                reference_price = sum(pair.price_usd * pair.liquidity_usd for pair in pairs) / total_liquidity
+                market_start_time = self._parse_timestamp(market_start)
+                window_start_time = max(market_start_time, snapshot_time - timedelta(hours=24))
+                reference_price = price_client.get_rolling_median_price(
+                    market_row["token_mint"],
+                    start_at=window_start_time.isoformat(),
+                    end_at=snapshot_hour,
+                )
                 latest_snapshot = self._latest_snapshot_row(connection, market_row["id"])
                 ath_price = reference_price
                 ath_timestamp = snapshot_hour
@@ -632,36 +639,6 @@ class MarketStore:
                         ath_timestamp = latest_snapshot["ath_timestamp"]
                 threshold_price = ath_price * self._threshold_fraction
                 drawdown_fraction = Decimal("0") if ath_price == 0 else ONE - (reference_price / ath_price)
-
-                for pair in pairs:
-                    connection.execute(
-                        """
-                        INSERT INTO market_pair_snapshots (
-                            market_id,
-                            snapshot_hour,
-                            pair_address,
-                            dex_id,
-                            price_usd,
-                            liquidity_usd,
-                            captured_at
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(market_id, snapshot_hour, pair_address) DO UPDATE SET
-                            dex_id = excluded.dex_id,
-                            price_usd = excluded.price_usd,
-                            liquidity_usd = excluded.liquidity_usd,
-                            captured_at = excluded.captured_at
-                        """,
-                        [
-                            market_row["id"],
-                            snapshot_hour,
-                            pair.pair_address,
-                            pair.dex_id,
-                            str(pair.price_usd),
-                            str(pair.liquidity_usd),
-                            captured_timestamp,
-                        ],
-                    )
 
                 connection.execute(
                     """
@@ -690,7 +667,8 @@ class MarketStore:
                         market_row["id"],
                         snapshot_hour,
                         str(reference_price),
-                        len(pairs),
+                        # Keep the existing column populated with a single canonical settlement reference.
+                        1,
                         str(ath_price),
                         ath_timestamp,
                         str(drawdown_fraction),
@@ -733,34 +711,35 @@ class MarketStore:
                 FROM markets
                 LEFT JOIN market_snapshots
                   ON market_snapshots.market_id = markets.id
-                 AND market_snapshots.snapshot_hour = (
-                    SELECT snapshot_hour
-                    FROM market_snapshots AS latest_snapshot
-                    WHERE latest_snapshot.market_id = markets.id
-                    ORDER BY latest_snapshot.snapshot_hour DESC
-                    LIMIT 1
-                 )
                 WHERE markets.state IN ('open', 'halted')
-                ORDER BY markets.id ASC
+                ORDER BY markets.id ASC, market_snapshots.snapshot_hour ASC
                 """
             ).fetchall()
 
-            markets_to_resolve: list[tuple[int, str, str]] = []
+            market_rows: dict[int, sqlite3.Row] = {}
+            snapshot_rows: dict[int, list[sqlite3.Row]] = {}
             for row in rows:
-                if row["snapshot_hour"] is not None and row["expiry"] is not None:
-                    snapshot_time = self._parse_timestamp(row["snapshot_hour"])
-                    expiry_time = self._parse_timestamp(row["expiry"])
-                    threshold_price = parse_decimal(row["threshold_price_usd"])
-                    reference_price = parse_decimal(row["reference_price_usd"])
-                    if (
-                        snapshot_time > self._parse_timestamp(row["ath_timestamp"])
-                        and snapshot_time <= expiry_time
-                        and reference_price <= threshold_price
-                    ):
-                        markets_to_resolve.append((row["id"], "resolved_yes", row["snapshot_hour"]))
-                        continue
-                if row["expiry"] is not None and resolution_time >= self._parse_timestamp(row["expiry"]):
-                    markets_to_resolve.append((row["id"], "resolved_no", resolution_timestamp))
+                market_rows.setdefault(row["id"], row)
+                if row["snapshot_hour"] is not None:
+                    snapshot_rows.setdefault(row["id"], []).append(row)
+
+            markets_to_resolve: list[tuple[int, str, str]] = []
+            for market_id, row in market_rows.items():
+                if row["expiry"] is None:
+                    continue
+
+                expiry_time = self._parse_timestamp(row["expiry"])
+                for snapshot_row in snapshot_rows.get(market_id, []):
+                    snapshot_time = self._parse_timestamp(snapshot_row["snapshot_hour"])
+                    if snapshot_time > self._parse_timestamp(snapshot_row["ath_timestamp"]) and snapshot_time <= expiry_time:
+                        threshold_price = parse_decimal(snapshot_row["threshold_price_usd"])
+                        reference_price = parse_decimal(snapshot_row["reference_price_usd"])
+                        if reference_price <= threshold_price:
+                            markets_to_resolve.append((market_id, "resolved_yes", snapshot_row["snapshot_hour"]))
+                            break
+                else:
+                    if resolution_time >= expiry_time:
+                        markets_to_resolve.append((market_id, "resolved_no", resolution_timestamp))
 
         for market_id, outcome_state, market_resolved_at in markets_to_resolve:
             self._settle_market(catalog, market_id, outcome_state, market_resolved_at)

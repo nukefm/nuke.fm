@@ -104,6 +104,31 @@ MVP. Important current constraints:
 - `uv run --env-file .env python -m nukefm resolve-markets`
 - `uv run --env-file .env python -m nukefm process-withdrawals --limit 100`
 
+## EC2 Deploy
+
+The repo now includes a minimal EC2 deploy path under [`ops/ec2`](ops/ec2):
+
+- `bootstrap-host.sh` installs the host prerequisites, creates `/srv/nukefm`, installs a systemd service, and creates a bare git repo with a `post-receive` hook.
+- `push-production.sh` pushes the current local `HEAD` to that bare repo as `main`.
+- `sync-state.sh` copies `.env`, copies `data/nukefm.sqlite3` when present, and imports the two `secret-tool` seeds into the remote host.
+
+Recommended first deploy flow:
+
+1. Launch an Ubuntu EC2 instance and open inbound `22` and `8000`.
+2. Run `./ops/ec2/bootstrap-host.sh <host> [user]`.
+3. On the server, set `NUKEFM_KEYRING_PASSWORD` in `/srv/nukefm/shared/runtime.env`.
+4. Run `./ops/ec2/push-production.sh <host> [user]`.
+5. Run `./ops/ec2/sync-state.sh <host> [user]`.
+
+After that, a normal update is just:
+
+1. `git push origin <branch>`
+2. `./ops/ec2/push-production.sh <host> [user]`
+
+The headless host still uses `secret-tool`. `run-service.sh` starts a private D-Bus and
+GNOME keyring session before launching the app so the existing treasury code can keep reading
+the Solana seeds from Secret Service instead of moving those seeds into `.env`.
+
 ## Private Surface
 
 - `POST /v1/auth/challenge`

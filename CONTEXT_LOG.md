@@ -35,3 +35,9 @@
 - The sell API takes a requested share amount. The backend binary-searches the largest exact USDC redemption whose required share burn fits inside that request, and reports any tiny unfilled same-side remainder explicitly instead of creating hidden opposite-side dust.
 - Market liquidity accounts are derived from the same master seed as user deposit accounts, but the HMAC input is domain-separated as `market:{market_id}` instead of `user:{user_id}`.
 - Revenue sweep is split into two layers on purpose: the database records the full remaining internal market backing as platform revenue, while the on-chain sweep only moves the resolved market's dedicated USDC deposit account back to treasury because user trading stays offchain inside the shared treasury balance.
+
+## EC2 Deploy
+
+- The current public endpoints still instantiate `SolanaTreasury` because listing tokens ensures missing market-liquidity accounts. A headless deploy therefore still needs `secret-tool` working even for the read-only web surface.
+- The EC2 deploy path starts a private D-Bus plus GNOME keyring session inside the systemd service wrapper so the app can keep loading the Solana seeds from Secret Service instead of moving those seeds into `.env`.
+- Deploy updates are intentionally built around a bare git repo and `post-receive` hook on the host so normal code pushes stay one explicit step and do not depend on GitHub webhooks or Actions.

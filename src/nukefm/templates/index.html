@@ -3,11 +3,12 @@
 {% block content %}
 {% set counts = namespace(awaiting=0, open=0, halted=0) %}
 {% for token in tokens %}
-  {% if token.current_market.state == "awaiting_liquidity" %}
+  {% set market = token.current_market %}
+  {% if market.state == "awaiting_liquidity" %}
     {% set counts.awaiting = counts.awaiting + 1 %}
-  {% elif token.current_market.state == "open" %}
+  {% elif market.state == "open" %}
     {% set counts.open = counts.open + 1 %}
-  {% elif token.current_market.state == "halted" %}
+  {% elif market.state == "halted" %}
     {% set counts.halted = counts.halted + 1 %}
   {% endif %}
 {% endfor %}
@@ -15,17 +16,17 @@
 <section class="hero hero-grid">
   <div class="hero-copy-block">
     <p class="eyebrow">Decision Board</p>
-    <h1>See which token markets are actionable right now.</h1>
+    <h1>Scan which token markets are actionable right now.</h1>
     <p class="hero-copy">
-      Use the board to find markets that are waiting for seed liquidity, already live, or worth
-      checking for risk signals. The goal is not to trade the PM here. It is to tell a token trader
-      whether the market is live, funded, and carrying enough signal to matter.
+      Use this board to find the token pages that are live, seeded, or still waiting on a first
+      deposit. The point is to give a memecoin trader the fastest possible read on whether the PM
+      signal is live, meaningful, and worth checking against the underlying token.
     </p>
   </div>
   <aside class="hero-panel">
     <div class="hero-panel-header">
       <p class="panel-kicker">Board Snapshot</p>
-      <p class="panel-caption">Current catalog state</p>
+      <p class="panel-caption">What is live, what is blocked, and what still needs seed liquidity.</p>
     </div>
     <dl class="hero-stats">
       <div>
@@ -82,6 +83,20 @@
 
 <section class="market-grid">
   {% for token in tokens %}
+  {% set market = token.current_market %}
+  {% if market.state == "awaiting_liquidity" %}
+    {% set trader_state = "Signal waiting on seed" %}
+    {% set trader_state_note = "First funded liquidity deposit still needed." %}
+  {% elif market.state == "open" %}
+    {% set trader_state = "Signal live" %}
+    {% set trader_state_note = "Trading signal is active." %}
+  {% elif market.state == "halted" %}
+    {% set trader_state = "Signal paused" %}
+    {% set trader_state_note = "Market has halted and needs review." %}
+  {% else %}
+    {% set trader_state = "Series closed" %}
+    {% set trader_state_note = "This market is already resolved." %}
+  {% endif %}
   <a class="market-card" href="/tokens/{{ token.mint }}">
     <div class="market-card-top">
       <div class="market-card-token">
@@ -94,72 +109,78 @@
             <h2>{{ token.name }}</h2>
           </div>
         </div>
+        <p class="market-question">{{ market.question }}</p>
       </div>
-      <span class="state-pill state-{{ token.current_market.state }}">
-        {{ token.current_market.state|replace("_", " ") }}
-      </span>
+      <span class="state-pill state-{{ market.state }}">{{ trader_state }}</span>
     </div>
-    <p class="market-question">{{ token.current_market.question }}</p>
-    <p class="market-state-note">
-      {% if token.current_market.state == "awaiting_liquidity" %}
-      Waiting for the first liquidity seed. Prices and nuke tracking begin after that first funded deposit.
-      {% elif token.current_market.state == "open" %}
-      Live market. Compare prices, reference, drawdown, and threshold before acting.
-      {% elif token.current_market.state == "halted" %}
-      Halted market. Review the last captured metrics before making any decision.
-      {% else %}
-      This market has already resolved.
-      {% endif %}
-    </p>
+    <p class="market-state-note">{{ trader_state_note }}</p>
     <p class="market-mint">
       <span>Mint</span>
       <code title="{{ token.mint }}">{{ token.mint[:10] }}...{{ token.mint[-8:] }}</code>
     </p>
-    <dl class="metric-grid market-card-grid">
-      <div>
-        <dt>Readiness</dt>
+    <div class="market-brief-grid">
+      <div class="brief-card">
+        <dt>Signal</dt>
         <dd>
-          {% if token.current_market.liquidity_deposit_address %}
-          Signal can initialize
-          {% elif token.current_market.state == "awaiting_liquidity" %}
-          Signal not ready
+          {% if market.liquidity_deposit_address %}
+          {{ trader_state }}
           {% else %}
-          Not needed
+          Waiting on seed
           {% endif %}
         </dd>
+        <p>Liquidity deposit {% if market.liquidity_deposit_address %}ready{% else %}pending{% endif %}.</p>
       </div>
-      <div>
-        <dt>Liquidity</dt>
-        <dd>{{ token.current_market.total_liquidity_usdc or "0" }}</dd>
-      </div>
-      <div>
-        <dt>YES / NO</dt>
+      <div class="brief-card">
+        <dt>Price watch</dt>
         <dd>
-          {% if token.current_market.yes_price_usd and token.current_market.no_price_usd %}
-          {{ token.current_market.yes_price_usd }} / {{ token.current_market.no_price_usd }}
+          {% if market.yes_price_usd and market.no_price_usd %}
+          YES {{ market.yes_price_usd }} / NO {{ market.no_price_usd }}
           {% else %}
           Opens after first seed
           {% endif %}
         </dd>
+        <p>Use this only after the market is funded.</p>
       </div>
-      <div>
-        <dt>Reference</dt>
-        <dd>{{ token.current_market.reference_price_usd or "No snapshot yet" }}</dd>
+      <div class="brief-card">
+        <dt>Token context</dt>
+        <dd>
+          {% if market.underlying_market_cap_usd or market.underlying_volume_24h_usd %}
+          {{ market.underlying_market_cap_usd or "Metrics pending" }}
+          {% else %}
+          Metrics pending
+          {% endif %}
+        </dd>
+        <p>
+          {% if market.underlying_market_cap_usd or market.underlying_volume_24h_usd %}
+          24h volume {{ market.underlying_volume_24h_usd or "unavailable" }}.
+          {% else %}
+          24h volume appears after token metrics are captured.
+          {% endif %}
+        </p>
       </div>
-      <div>
-        <dt>Drawdown</dt>
-        <dd>{{ token.current_market.drawdown_fraction or "No snapshot yet" }}</dd>
+      <div class="brief-card">
+        <dt>Trigger watch</dt>
+        <dd>
+          {% if market.reference_price_usd %}
+          Ref {{ market.reference_price_usd }}
+          {% else %}
+          No snapshot yet
+          {% endif %}
+        </dd>
+        <p>
+          {% if market.drawdown_fraction %}
+          Drawdown {{ market.drawdown_fraction }}.
+          {% else %}
+          Drawdown and threshold appear after the first snapshot.
+          {% endif %}
+        </p>
       </div>
-      <div>
-        <dt>Market Cap</dt>
-        <dd>{{ token.current_market.underlying_market_cap_usd or "Metrics pending" }}</dd>
-      </div>
-    </dl>
+    </div>
     <p class="market-mint">
       <span>Liquidity Deposit</span>
-      <code title="{{ token.current_market.liquidity_deposit_address or 'Unassigned' }}">
-        {% if token.current_market.liquidity_deposit_address %}
-          {{ token.current_market.liquidity_deposit_address[:10] }}...{{ token.current_market.liquidity_deposit_address[-8:] }}
+      <code title="{{ market.liquidity_deposit_address or 'Unassigned' }}">
+        {% if market.liquidity_deposit_address %}
+          {{ market.liquidity_deposit_address[:10] }}...{{ market.liquidity_deposit_address[-8:] }}
         {% else %}
           Pending
         {% endif %}

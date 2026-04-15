@@ -1,68 +1,63 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set market = token.current_market %}
+{% if market.state == "awaiting_liquidity" %}
+  {% set trader_state = "Signal waiting on seed" %}
+  {% set trader_state_note = "The market is not tradable as a signal yet. The first funded liquidity deposit starts the 90 day clock and pricing." %}
+{% elif market.state == "open" %}
+  {% set trader_state = "Signal live" %}
+  {% set trader_state_note = "This market is live. Compare price, reference, drawdown, and threshold before acting." %}
+{% elif market.state == "halted" %}
+  {% set trader_state = "Signal paused" %}
+  {% set trader_state_note = "Trading is halted. Use the last captured reference and activity trail to judge what changed." %}
+{% else %}
+  {% set trader_state = "Series closed" %}
+  {% set trader_state_note = "This series has resolved. Use the activity trail and prior series for context." %}
+{% endif %}
+
 <section class="detail-hero detail-hero-v2">
   <article class="detail-card detail-hero-main">
     <a class="back-link" href="/">← Back to market board</a>
     <div class="detail-topline">
       <div class="detail-heading">
-        <div class="token-identity-row">
+        <div class="token-identity-row token-identity-row-lg">
           {% if token.image_url %}
           <img class="token-avatar token-avatar-lg" src="{{ token.image_url }}" alt="{{ token.name }} token image">
           {% endif %}
           <div>
             <p class="eyebrow">{{ token.symbol }}</p>
-            <h1>{{ token.name }}</h1>
-            <p class="headline-question">{{ token.current_market.question }}</p>
+            <p class="token-name">{{ token.name }}</p>
+            <h1 class="headline-question">{{ market.question }}</h1>
           </div>
         </div>
       </div>
-      <span class="state-pill state-{{ token.current_market.state }}">
-        {{ token.current_market.state|replace("_", " ") }}
-      </span>
+      <span class="state-pill state-{{ market.state }}">{{ trader_state }}</span>
     </div>
 
-    <p class="market-state-note">
-      {% if token.current_market.state == "awaiting_liquidity" %}
-      Waiting for the first funded liquidity deposit. The 90 day window, YES/NO pricing, and nuke tracking all begin when the first seed lands.
-      {% elif token.current_market.state == "open" %}
-      Live market. Compare YES/NO pricing against the latest reference, ATH, drawdown, and threshold before taking action.
-      {% elif token.current_market.state == "halted" %}
-      Trading is halted. Use the latest captured reference and activity trail to understand where the market paused.
-      {% else %}
-      This series has already resolved. Review the activity trail and prior series outcomes for context.
-      {% endif %}
-    </p>
+    <p class="market-state-note">{{ trader_state_note }}</p>
 
     <section class="detail-action-card">
       <div class="detail-action-header">
         <div>
-          <p class="panel-kicker">Market Readiness</p>
-          <p class="panel-caption">
-            {% if token.current_market.state == "awaiting_liquidity" %}
-            Is this market usable yet as a signal source?
-            {% elif token.current_market.state == "open" %}
-            This market is live and producing a signal.
-            {% else %}
-            Treat this page as context, not a live signal.
-            {% endif %}
-          </p>
+          <p class="panel-kicker">Liquidity Gate</p>
+          <p class="panel-caption">This is the control point that turns the market from context into a live signal.</p>
         </div>
-        <span class="status-chip {% if token.current_market.liquidity_deposit_address %}status-chip-ready{% else %}status-chip-pending{% endif %}">
-          {% if token.current_market.liquidity_deposit_address %}Setup ready{% else %}Setup pending{% endif %}
+        <span class="status-chip {% if market.liquidity_deposit_address %}status-chip-ready{% else %}status-chip-pending{% endif %}">
+          {% if market.liquidity_deposit_address %}Deposit ready{% else %}Deposit pending{% endif %}
         </span>
       </div>
 
-      {% if token.current_market.liquidity_deposit_address %}
+      {% if market.liquidity_deposit_address %}
       <div class="address-row">
-        <code class="address-block">{{ token.current_market.liquidity_deposit_address }}</code>
-        <button class="copy-button" type="button" data-copy="{{ token.current_market.liquidity_deposit_address }}">Copy</button>
+        <code class="address-block">{{ market.liquidity_deposit_address }}</code>
+        <button class="copy-button" type="button" data-copy="{{ market.liquidity_deposit_address }}">Copy</button>
       </div>
       <p class="availability-note">
-        {% if token.current_market.state == "awaiting_liquidity" %}
-        This market can be seeded through the address above. Until that first deposit lands, treat this page as pre-launch context rather than a live warning signal.
-        {% elif token.current_market.state == "open" %}
-        The market is already live. Use the address above only if you are explicitly funding the PM; the main value here is the signal it produces for the token.
+        {% if market.state == "awaiting_liquidity" %}
+        The market can be seeded through the address above. Until that first deposit lands, treat this page as pre-launch context rather than a live warning signal.
+        {% elif market.state == "open" %}
+        The market is already live. The address above is operational, but the main value here is the signal it produces for the token.
         {% else %}
         This address was assigned for the active lifecycle of this market.
         {% endif %}
@@ -72,25 +67,6 @@
         The liquidity deposit address has not been assigned yet. Once assigned, it appears here in full and can be copied directly.
       </p>
       {% endif %}
-
-      <dl class="hero-stats action-meta-grid">
-        <div>
-          <dt>Series</dt>
-          <dd>{{ token.current_market.sequence_number }}</dd>
-        </div>
-        <div>
-          <dt>Liquidity</dt>
-          <dd>{{ token.current_market.total_liquidity_usdc or "0" }}</dd>
-        </div>
-        <div>
-          <dt>Created</dt>
-          <dd>{{ token.current_market.created_at }}</dd>
-        </div>
-        <div>
-          <dt>Launch Feed</dt>
-          <dd>{{ token.launched_at or "Unavailable" }}</dd>
-        </div>
-      </dl>
     </section>
 
     <div class="detail-code-strip">
@@ -101,11 +77,11 @@
 
   <aside class="summary-grid">
     <section class="detail-card summary-card">
-      <p class="summary-label">Market Phase</p>
-      <p class="summary-value">{{ token.current_market.state|replace("_", " ") }}</p>
+      <p class="summary-label">Signal status</p>
+      <p class="summary-value">{{ trader_state }}</p>
       <p class="summary-copy">
-        {% if token.current_market.market_start %}
-        Started {{ token.current_market.market_start }}.
+        {% if market.market_start %}
+        Started {{ market.market_start }}.
         {% else %}
         Starts with the first funded liquidity deposit.
         {% endif %}
@@ -113,16 +89,16 @@
     </section>
 
     <section class="detail-card summary-card">
-      <p class="summary-label">Pricing</p>
-      {% if token.current_market.yes_price_usd and token.current_market.no_price_usd %}
+      <p class="summary-label">Price watch</p>
+      {% if market.yes_price_usd and market.no_price_usd %}
       <dl class="summary-pair-list">
         <div>
           <dt>YES</dt>
-          <dd>{{ token.current_market.yes_price_usd }}</dd>
+          <dd>{{ market.yes_price_usd }}</dd>
         </div>
         <div>
           <dt>NO</dt>
-          <dd>{{ token.current_market.no_price_usd }}</dd>
+          <dd>{{ market.no_price_usd }}</dd>
         </div>
       </dl>
       {% else %}
@@ -132,43 +108,16 @@
     </section>
 
     <section class="detail-card summary-card">
-      <p class="summary-label">Trigger Watch</p>
-      {% if token.current_market.reference_price_usd %}
-      <dl class="summary-pair-list">
-        <div>
-          <dt>Reference</dt>
-          <dd>{{ token.current_market.reference_price_usd }}</dd>
-        </div>
-        <div>
-          <dt>Drawdown</dt>
-          <dd>{{ token.current_market.drawdown_fraction }}</dd>
-        </div>
-        <div>
-          <dt>ATH</dt>
-          <dd>{{ token.current_market.ath_price_usd }}</dd>
-        </div>
-        <div>
-          <dt>Threshold</dt>
-          <dd>{{ token.current_market.threshold_price_usd }}</dd>
-        </div>
-      </dl>
-      {% else %}
-      <p class="summary-value">No snapshot yet</p>
-      <p class="summary-copy">Reference, ATH, threshold, and drawdown only appear after the market opens and the first hourly snapshot lands.</p>
-      {% endif %}
-    </section>
-
-    <section class="detail-card summary-card">
-      <p class="summary-label">Token Context</p>
-      {% if token.current_market.underlying_market_cap_usd or token.current_market.underlying_volume_24h_usd %}
+      <p class="summary-label">Token context</p>
+      {% if market.underlying_market_cap_usd or market.underlying_volume_24h_usd %}
       <dl class="summary-pair-list">
         <div>
           <dt>Market Cap</dt>
-          <dd>{{ token.current_market.underlying_market_cap_usd or "Unavailable" }}</dd>
+          <dd>{{ market.underlying_market_cap_usd or "Unavailable" }}</dd>
         </div>
         <div>
           <dt>24h Volume</dt>
-          <dd>{{ token.current_market.underlying_volume_24h_usd or "Unavailable" }}</dd>
+          <dd>{{ market.underlying_volume_24h_usd or "Unavailable" }}</dd>
         </div>
       </dl>
       {% else %}
@@ -183,80 +132,44 @@
   <article class="detail-card">
     <div class="detail-section-heading">
       <div>
-        <p class="eyebrow">Market Setup</p>
-        <h2>Current series facts</h2>
-      </div>
-      <p class="section-copy">The operational fields that determine whether the market is live, when it expires, and whether it is ready for funding.</p>
-    </div>
-    <dl class="metric-grid detail-metric-grid">
-      <div>
-        <dt>Series</dt>
-        <dd>{{ token.current_market.sequence_number }}</dd>
-      </div>
-      <div>
-        <dt>State</dt>
-        <dd>{{ token.current_market.state|replace("_", " ") }}</dd>
-      </div>
-      <div>
-        <dt>Market Start</dt>
-        <dd>{{ token.current_market.market_start or "Starts after first liquidity deposit" }}</dd>
-      </div>
-      <div>
-        <dt>Expiry</dt>
-        <dd>{{ token.current_market.expiry or "Not started" }}</dd>
-      </div>
-      <div>
-        <dt>Liquidity Deposit Address</dt>
-        <dd>{{ token.current_market.liquidity_deposit_address or "Pending assignment" }}</dd>
-      </div>
-      <div>
-        <dt>Total Liquidity</dt>
-        <dd>{{ token.current_market.total_liquidity_usdc or "0" }}</dd>
-      </div>
-      <div>
-        <dt>Resolved At</dt>
-        <dd>{{ token.current_market.resolved_at or "Unresolved" }}</dd>
-      </div>
-    </dl>
-  </article>
-
-  <article class="detail-card">
-    <div class="detail-section-heading">
-      <div>
-        <p class="eyebrow">Decision Signal</p>
+        <p class="eyebrow">Trigger Watch</p>
         <h2>Pricing and trigger data</h2>
       </div>
-      <p class="section-copy">The live market signals a token trader would use to judge whether the nuke thesis is strengthening or fading.</p>
+      <p class="section-copy">This is the live decision layer a token trader would use to judge whether the nuke thesis is strengthening or fading.</p>
     </div>
-    {% if token.current_market.reference_price_usd or token.current_market.yes_price_usd %}
+    {% if market.reference_price_usd or market.yes_price_usd %}
     <dl class="metric-grid detail-metric-grid">
       <div>
         <dt>YES Price</dt>
-        <dd>{{ token.current_market.yes_price_usd or "Awaiting liquidity" }}</dd>
+        <dd>{{ market.yes_price_usd or "Awaiting liquidity" }}</dd>
       </div>
       <div>
         <dt>NO Price</dt>
-        <dd>{{ token.current_market.no_price_usd or "Awaiting liquidity" }}</dd>
+        <dd>{{ market.no_price_usd or "Awaiting liquidity" }}</dd>
       </div>
       <div>
         <dt>Reference</dt>
-        <dd>{{ token.current_market.reference_price_usd or "No snapshots yet" }}</dd>
+        <dd>{{ market.reference_price_usd or "No snapshots yet" }}</dd>
       </div>
       <div>
         <dt>ATH</dt>
-        <dd>{{ token.current_market.ath_price_usd or "No snapshots yet" }}</dd>
+        <dd>{{ market.ath_price_usd or "No snapshots yet" }}</dd>
       </div>
       <div>
         <dt>ATH Timestamp</dt>
-        <dd>{{ token.current_market.ath_timestamp or "No snapshots yet" }}</dd>
+        <dd>{{ market.ath_timestamp or "No snapshots yet" }}</dd>
       </div>
       <div>
         <dt>Drawdown</dt>
-        <dd>{{ token.current_market.drawdown_fraction or "No snapshots yet" }}</dd>
+        <dd>{{ market.drawdown_fraction or "No snapshots yet" }}</dd>
       </div>
       <div>
         <dt>Threshold</dt>
-        <dd>{{ token.current_market.threshold_price_usd or "No snapshots yet" }}</dd>
+        <dd>{{ market.threshold_price_usd or "No snapshots yet" }}</dd>
+      </div>
+      <div>
+        <dt>Start</dt>
+        <dd>{{ market.market_start or "No snapshots yet" }}</dd>
       </div>
     </dl>
     {% else %}
@@ -269,6 +182,48 @@
   <article class="detail-card">
     <div class="detail-section-heading">
       <div>
+        <p class="eyebrow">Market Setup</p>
+        <h2>Current series facts</h2>
+      </div>
+      <p class="section-copy">Operational fields that determine when the market starts, when it expires, and whether the series is finished.</p>
+    </div>
+    <dl class="metric-grid detail-metric-grid">
+      <div>
+        <dt>Series</dt>
+        <dd>{{ market.sequence_number }}</dd>
+      </div>
+      <div>
+        <dt>State</dt>
+        <dd>{{ trader_state }}</dd>
+      </div>
+      <div>
+        <dt>Market Start</dt>
+        <dd>{{ market.market_start or "Starts after first liquidity deposit" }}</dd>
+      </div>
+      <div>
+        <dt>Expiry</dt>
+        <dd>{{ market.expiry or "Not started" }}</dd>
+      </div>
+      <div>
+        <dt>Liquidity Deposit Address</dt>
+        <dd>{{ market.liquidity_deposit_address or "Pending assignment" }}</dd>
+      </div>
+      <div>
+        <dt>Total Liquidity</dt>
+        <dd>{{ market.total_liquidity_usdc or "0" }}</dd>
+      </div>
+      <div>
+        <dt>Resolved At</dt>
+        <dd>{{ market.resolved_at or "Unresolved" }}</dd>
+      </div>
+    </dl>
+  </article>
+</section>
+
+<section class="detail-layout">
+  <article class="detail-card">
+    <div class="detail-section-heading">
+      <div>
         <p class="eyebrow">Token Context</p>
         <h2>Underlying token metrics</h2>
       </div>
@@ -277,11 +232,11 @@
     <dl class="metric-grid detail-metric-grid">
       <div>
         <dt>24h Volume</dt>
-        <dd>{{ token.current_market.underlying_volume_24h_usd or "Metrics not captured yet" }}</dd>
+        <dd>{{ market.underlying_volume_24h_usd or "Metrics not captured yet" }}</dd>
       </div>
       <div>
         <dt>Market Cap</dt>
-        <dd>{{ token.current_market.underlying_market_cap_usd or "Metrics not captured yet" }}</dd>
+        <dd>{{ market.underlying_market_cap_usd or "Metrics not captured yet" }}</dd>
       </div>
       <div>
         <dt>Launch Feed Timestamp</dt>

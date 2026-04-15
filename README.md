@@ -111,7 +111,7 @@ MVP. Important current constraints:
 
 The repo now includes a minimal EC2 deploy path under [`ops/ec2`](ops/ec2):
 
-- `bootstrap-host.sh` installs the host prerequisites, creates `/srv/nukefm`, installs a systemd service, and creates a bare git repo with a `post-receive` hook.
+- `bootstrap-host.sh` installs the host prerequisites, configures Caddy for `https://nukefm.xyz`, creates `/srv/nukefm`, installs a systemd service, and creates a bare git repo with a `post-receive` hook.
 - `push-production.sh` pushes the current local `HEAD` to that bare repo as `main`.
 - `sync-state.sh` copies `.env`, copies `data/nukefm.sqlite3` when present, and imports the two `secret-tool` seeds into the remote host.
 - Set `NUKEFM_SSH_KEY=/path/to/key.pem` when the host uses a dedicated EC2 key pair instead of your default SSH agent/config.
@@ -119,7 +119,7 @@ The repo now includes a minimal EC2 deploy path under [`ops/ec2`](ops/ec2):
 
 Recommended first deploy flow:
 
-1. Launch an Ubuntu EC2 instance and open inbound `22` and `8000`.
+1. Launch an Ubuntu EC2 instance and open inbound `22`, `80`, and `443`.
 2. Run `./ops/ec2/bootstrap-host.sh <host> [user]`.
 3. On the server, set `NUKEFM_KEYRING_PASSWORD` in `/srv/nukefm/shared/runtime.env`.
 4. Run `./ops/ec2/push-production.sh <host> [user]`.
@@ -132,7 +132,8 @@ After that, a normal update is just:
 
 The headless host still uses `secret-tool`. `run-service.sh` starts a private D-Bus and
 GNOME keyring session before launching the app so the existing treasury code can keep reading
-the Solana seeds from Secret Service instead of moving those seeds into `.env`.
+the Solana seeds from Secret Service instead of moving those seeds into `.env`. The app now
+binds to `127.0.0.1:8000`, and Caddy terminates TLS for `nukefm.xyz` and proxies requests to it.
 
 ## Private Surface
 

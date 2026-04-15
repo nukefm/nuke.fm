@@ -22,7 +22,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl dbus-x11 git gnome-keyring libsecret-tools
+apt-get install -y ca-certificates caddy curl dbus-x11 git gnome-keyring libsecret-tools
 
 install -d -o "${deploy_user}" -g "${deploy_user}" -m 755 "${app_root}" "${app_root}/git" "${work_tree}" "${shared_dir}"
 
@@ -42,6 +42,14 @@ EOF
     chown "${deploy_user}:${deploy_user}" "${runtime_env}"
     chmod 600 "${runtime_env}"
 fi
+
+cat >/etc/caddy/Caddyfile <<'EOF'
+nukefm.xyz {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8000
+}
+EOF
+caddy validate --config /etc/caddy/Caddyfile
 
 cat >/etc/systemd/system/${service_name} <<EOF
 [Unit]
@@ -105,3 +113,5 @@ visudo -cf /etc/sudoers.d/nukefm-deploy
 
 systemctl daemon-reload
 systemctl enable ${service_name}
+systemctl enable caddy
+systemctl restart caddy

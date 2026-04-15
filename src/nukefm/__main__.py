@@ -44,7 +44,14 @@ def main() -> None:
     configure_logging(settings.log_path)
 
     if arguments.command == "serve":
-        uvicorn.run("nukefm.app:create_app", factory=True, host=arguments.host, port=arguments.port)
+        uvicorn.run(
+            "nukefm.app:create_app",
+            factory=True,
+            host=arguments.host,
+            port=arguments.port,
+            proxy_headers=True,
+            forwarded_allow_ips="127.0.0.1",
+        )
         return
 
     catalog = Catalog(settings.database_path)

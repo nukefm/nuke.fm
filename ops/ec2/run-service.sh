@@ -14,4 +14,4 @@ for required_command in uv; do
 done
 
 exec "$(dirname "${BASH_SOURCE[0]}")/run-with-keyring.sh" \
-    uv run --env-file .env python -m nukefm serve --host 0.0.0.0 --port "${PORT:-8000}"
+    uv run --env-file .env python -m nukefm serve --host 127.0.0.1 --port "${PORT:-8000}"

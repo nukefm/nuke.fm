@@ -188,6 +188,47 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     assert account_store.get_available_balance_atomic(user["id"]) > 30_000_000
 
 
+def test_snapshot_skips_hours_before_market_open(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    catalog = Catalog(database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint="MintFresh",
+                name="Fresh",
+                symbol="FRESH",
+                image_url=None,
+                launched_at="2026-04-15T16:30:00+00:00",
+                creator=None,
+            )
+        ]
+    )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+    treasury = FakeTreasury()
+    market_store.ensure_missing_market_liquidity_accounts(treasury)
+    market_id = market_store.list_token_cards()[0]["current_market"]["id"]
+    market_store.record_market_liquidity_credit(
+        market_id=market_id,
+        amount_atomic=1_000_000,
+        observed_balance_after_atomic=1_000_000,
+        credited_at="2026-04-15T16:34:04+00:00",
+    )
+
+    price_client = FakeSettlementPriceClient([Decimal("1")])
+    captured = market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T16:34:30+00:00")
+
+    assert captured == []
+    assert price_client.calls == []
+
+    with connect_database(database_path) as connection:
+        snapshot_count = connection.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0]
+
+    assert snapshot_count == 0
+
+
 def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     catalog = Catalog(database_path)

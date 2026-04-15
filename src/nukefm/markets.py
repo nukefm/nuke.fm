@@ -843,6 +843,8 @@ class MarketStore:
                     raise ValueError(f"Market {market_row['id']} is missing market_start and cannot be snapshotted.")
 
                 market_start_time = self._parse_timestamp(market_start)
+                if market_start_time > snapshot_time:
+                    continue
                 window_start_time = max(market_start_time, snapshot_time - timedelta(hours=24))
                 reference_price = price_client.get_rolling_median_price(
                     market_row["token_mint"],

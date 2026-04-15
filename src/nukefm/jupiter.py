@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from time import sleep
+from time import monotonic, sleep
 
 import requests
 
@@ -12,6 +12,7 @@ class JupiterTokensClient:
     def __init__(self, *, base_url: str) -> None:
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
+        self._last_request_started_at = 0.0
         self._session.headers.update(
             {
                 "accept": "application/json",
@@ -26,7 +27,11 @@ class JupiterTokensClient:
 
     def list_token_pairs(self, token_mint: str) -> list[DexScreenerPair]:
         response = None
-        for attempt in range(4):
+        for attempt in range(6):
+            elapsed_seconds = monotonic() - self._last_request_started_at
+            if elapsed_seconds < 1.1:
+                sleep(1.1 - elapsed_seconds)
+            self._last_request_started_at = monotonic()
             response = self._session.get(
                 f"{self._base_url}/search",
                 params={"query": token_mint, "limit": 3},
@@ -36,7 +41,7 @@ class JupiterTokensClient:
                 break
 
             retry_after = response.headers.get("retry-after")
-            backoff_seconds = 1 if retry_after is None else max(int(retry_after), 1)
+            backoff_seconds = 5 if retry_after is None else max(int(retry_after), 1)
             sleep(backoff_seconds * (attempt + 1))
 
         if response is None:

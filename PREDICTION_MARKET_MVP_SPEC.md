@@ -6,7 +6,7 @@ An offchain, real-money prediction market for Bags tokens, settled in Solana USD
 
 The web frontend is read-only. It exists to publish market state, not to trade. All trading, balances, deposits, withdrawals, positions, and portfolio access happen through the API.
 
-Each token has a token page and a rolling prediction market series. Each active market uses one backend-only XYK AMM between `YES` and `NO`.
+Each token has a token page and a rolling prediction market series. Each active market uses one backend-only weighted AMM between `YES` and `NO`.
 
 ## Market Series
 
@@ -68,13 +68,21 @@ An earlier nuke does not poison later markets. If a token dies, comes back, and 
 
 ### Pool Structure
 
-Each active market has one offchain XYK pool with:
+Each active market has one offchain weighted pool with:
 
 - `YES reserve`
 - `NO reserve`
-- invariant `YES_reserve * NO_reserve = k`
+- `YES weight`
+- `NO weight`
+- invariant `YES_reserve ^ YES_weight * NO_reserve ^ NO_weight = k`
 
 There is no order book.
+
+Weights are positive and normalized so:
+
+- `YES_weight + NO_weight = 1`
+
+The weights are part of mutable market state.
 
 ### Price Display
 
@@ -82,17 +90,20 @@ The pool is internally `YES <> NO`, but the frontend should display both prices 
 
 Use:
 
-- `YES price in USDC = NO_reserve / (YES_reserve + NO_reserve)`
-- `NO price in USDC = YES_reserve / (YES_reserve + NO_reserve)`
+- `YES/NO spot ratio = (NO_reserve / NO_weight) / (YES_reserve / YES_weight)`
+- `YES price in USDC = (NO_reserve * YES_weight) / ((NO_reserve * YES_weight) + (YES_reserve * NO_weight))`
+- `NO price in USDC = (YES_reserve * NO_weight) / ((NO_reserve * YES_weight) + (YES_reserve * NO_weight))`
 
 These prices sum to `1.00` and can be displayed as probabilities directly.
 
 ### Trading
 
-- Traders buy or sell `YES` and `NO` against the XYK pool through the API only.
+- Traders buy or sell `YES` and `NO` against the weighted pool through the API only.
 - The API should expose quote and execution endpoints.
 - Winning shares settle to `1.00 USDC`.
 - Losing shares settle to `0.00 USDC`.
+
+Quotes and execution should follow the weighted invariant, not constant-product XYK math.
 
 ### Liquidity Deposits
 
@@ -106,7 +117,15 @@ When a liquidity deposit is credited:
 
 - the backend mints complete sets internally
 - the deposit amount becomes equal additions to the market's `YES` and `NO` reserves
-- the pool price stays unchanged at the moment of deposit
+- the backend updates `YES weight` and `NO weight` so the displayed `YES` and `NO` prices stay unchanged at the moment of deposit
+
+This is the explicit design choice for the MVP. Liquidity deposits increase depth while preserving the pre-deposit displayed price by retuning weights.
+
+If the market is receiving its first credited liquidity deposit:
+
+- initialize the market with equal `YES` and `NO` reserves
+- initialize the market with equal weights
+- open the market at `0.50 / 0.50`
 
 ### Liquidity At Resolution
 
@@ -232,7 +251,7 @@ The frontend does not need to support this flow because the frontend is read-onl
 ### Trading
 
 - Bot fetches a quote from the private API.
-- Bot submits a trade against the XYK AMM.
+- Bot submits a trade against the weighted AMM.
 - Backend executes the swap, updates pool reserves, updates positions, and records the trade in the ledger.
 
 ### Withdrawal
@@ -244,7 +263,7 @@ The frontend does not need to support this flow because the frontend is read-onl
 
 - Anyone fetches the current market's public liquidity deposit address from the public API or the frontend.
 - Anyone sends Solana USDC to that market address.
-- Once credited, the deposit increases the market's `YES` and `NO` reserves equally.
+- Once credited, the deposit increases the market's `YES` and `NO` reserves equally and updates the market weights to preserve the pre-deposit price.
 - If this is the first credited liquidity deposit for that market, the market moves from `awaiting_liquidity` to `open` and the 90 day clock begins.
 
 ## Backend
@@ -287,7 +306,7 @@ The frontend does not need to support this flow because the frontend is read-onl
 
 #### AMM Engine
 
-- XYK reserve state
+- weighted reserve and weight state
 - quote generation
 - swap execution
 - liquidity seeding
@@ -414,7 +433,7 @@ The MVP does not need:
 
 ### Then
 
-- XYK AMM engine
+- weighted AMM engine
 - trading API
 - market liquidity deposit flow
 - hourly market snapshots

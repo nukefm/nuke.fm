@@ -4,7 +4,9 @@ import hashlib
 import hmac
 import subprocess
 from dataclasses import dataclass
+from time import sleep
 
+import httpx
 from loguru import logger
 from solana.rpc.api import Client
 from solders.keypair import Keypair
@@ -269,7 +271,10 @@ class SolanaTreasury:
         return processed_sweeps
 
     def get_token_account_balance(self, token_account_address: str) -> int:
-        response = self._client.get_token_account_balance(Pubkey.from_string(token_account_address))
+        response = self._rpc_call(
+            lambda: self._client.get_token_account_balance(Pubkey.from_string(token_account_address)),
+            description=f"get token account balance for {token_account_address}",
+        )
         return int(response.value.amount)
 
     def _derive_user_owner_keypair(self, user_id: int) -> Keypair:
@@ -296,7 +301,10 @@ class SolanaTreasury:
 
     def _ensure_associated_token_account(self, *, owner: Pubkey) -> None:
         token_account = get_associated_token_address(owner, self._usdc_mint)
-        if self._client.get_account_info(token_account).value is not None:
+        if self._rpc_call(
+            lambda: self._client.get_account_info(token_account),
+            description=f"get account info for {token_account}",
+        ).value is not None:
             return
         self._send_instructions(
             [
@@ -331,12 +339,45 @@ class SolanaTreasury:
         return bytes.fromhex(secret_text)
 
     def _send_instructions(self, instructions: list, *, signers: list[Keypair]) -> str:
-        latest_blockhash = self._client.get_latest_blockhash().value
+        latest_blockhash = self._rpc_call(
+            self._client.get_latest_blockhash,
+            description="get latest blockhash",
+        ).value
         transaction = Transaction.new_signed_with_payer(
             instructions,
             self._treasury_wallet,
             signers,
             latest_blockhash.blockhash,
         )
-        response = self._client.send_transaction(transaction)
+        response = self._rpc_call(
+            lambda: self._client.send_transaction(transaction),
+            description="send Solana transaction",
+        )
         return str(response.value)
+
+    def _rpc_call(self, operation, *, description: str):
+        for attempt in range(5):
+            try:
+                return operation()
+            except Exception as error:
+                if not self._is_retryable_rpc_error(error) or attempt == 4:
+                    raise
+
+                backoff_seconds = 1 + attempt * 2
+                logger.warning(
+                    "Retrying Solana RPC call after rate limit: {} (attempt {} of 5, sleeping {}s)",
+                    description,
+                    attempt + 1,
+                    backoff_seconds,
+                )
+                sleep(backoff_seconds)
+
+        raise RuntimeError(f"Solana RPC retry loop exited unexpectedly for {description}.")
+
+    def _is_retryable_rpc_error(self, error: Exception) -> bool:
+        current_error: Exception | None = error
+        while current_error is not None:
+            if isinstance(current_error, httpx.HTTPStatusError):
+                return current_error.response.status_code == 429
+            current_error = current_error.__cause__
+        return False

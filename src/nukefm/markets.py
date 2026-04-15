@@ -575,7 +575,13 @@ class MarketStore:
                 FROM markets
                 WHERE state IN ('awaiting_liquidity', 'open', 'halted')
                   AND liquidity_deposit_address IS NULL
-                ORDER BY id ASC
+                ORDER BY
+                    CASE state
+                        WHEN 'open' THEN 0
+                        WHEN 'halted' THEN 1
+                        ELSE 2
+                    END,
+                    id ASC
                 """
             ).fetchall()
         for row in rows:

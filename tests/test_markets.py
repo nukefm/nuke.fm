@@ -268,6 +268,143 @@ def test_initialize_migrates_legacy_market_in_place_and_preserves_deposit_addres
     assert migrated_account["token_account_address"] == "legacy-deposit-address"
 
 
+def test_initialize_parks_addressed_legacy_market_until_price_is_available(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    with connect_database(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE tokens (
+                mint TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                name TEXT NOT NULL,
+                image_url TEXT,
+                launched_at TEXT,
+                creator TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE markets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_mint TEXT NOT NULL,
+                sequence_number INTEGER NOT NULL,
+                question TEXT NOT NULL,
+                state TEXT NOT NULL,
+                market_start TEXT,
+                expiry TEXT,
+                liquidity_deposit_address TEXT,
+                resolved_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(token_mint, sequence_number)
+            );
+
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_address TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE market_liquidity_accounts (
+                market_id INTEGER PRIMARY KEY,
+                owner_wallet_address TEXT NOT NULL UNIQUE,
+                token_account_address TEXT NOT NULL UNIQUE,
+                observed_balance_atomic INTEGER NOT NULL DEFAULT 0,
+                ata_initialized_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO tokens (mint, symbol, name, image_url, launched_at, creator, created_at, updated_at)
+            VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?)
+            """,
+            ["MintParked", "PARK", "Parked", "2026-04-15T11:46:49+00:00", "2026-04-15T11:46:49+00:00"],
+        )
+        connection.execute(
+            """
+            INSERT INTO markets (
+                id,
+                token_mint,
+                sequence_number,
+                question,
+                state,
+                market_start,
+                expiry,
+                liquidity_deposit_address,
+                resolved_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, 'awaiting_liquidity', NULL, NULL, ?, NULL, ?, ?)
+            """,
+            [
+                5,
+                "MintParked",
+                1,
+                "Will PARK nuke by 90 days after this market opens?",
+                "parked-deposit-address",
+                "2026-04-15T11:46:49+00:00",
+                "2026-04-15T11:46:49+00:00",
+            ],
+        )
+        connection.execute(
+            """
+            INSERT INTO market_liquidity_accounts (
+                market_id,
+                owner_wallet_address,
+                token_account_address,
+                observed_balance_atomic,
+                ata_initialized_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, 0, ?, ?, ?)
+            """,
+            [
+                5,
+                "parked-owner-wallet",
+                "parked-deposit-address",
+                "2026-04-15T16:30:00+00:00",
+                "2026-04-15T16:30:00+00:00",
+                "2026-04-15T16:30:00+00:00",
+            ],
+        )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+
+    with connect_database(database_path) as connection:
+        parked_market = connection.execute(
+            """
+            SELECT id, is_frontend_visible, starting_price_usd, liquidity_deposit_address
+            FROM markets
+            WHERE id = 5
+            """
+        ).fetchone()
+
+    assert parked_market is not None
+    assert parked_market["is_frontend_visible"] == 0
+    assert parked_market["starting_price_usd"] is None
+    assert parked_market["liquidity_deposit_address"] == "parked-deposit-address"
+
+    create_markets_from_prices(
+        market_store,
+        {"MintParked": Decimal("3.75")},
+        captured_at="2026-04-15T16:30:26+00:00",
+    )
+
+    token = market_store.get_token_detail("MintParked")
+    assert token is not None
+    assert token["current_market"]["id"] == 5
+    assert token["current_market"]["liquidity_deposit_address"] == "parked-deposit-address"
+    assert token["current_market"]["starting_price_usd"] == "3.75"
+    assert token["hidden_active_markets"] == []
+
+
 def test_initialize_prunes_dead_legacy_markets_without_observed_price(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     with connect_database(database_path) as connection:

@@ -303,14 +303,24 @@ class MarketStore:
                             captured_timestamp,
                         )
                     else:
-                        self._create_market(
-                            connection,
-                            token_mint=row["mint"],
-                            symbol=row["symbol"],
-                            created_at=captured_timestamp,
-                            starting_price_usd=price_pair.price_usd,
-                            is_frontend_visible=True,
-                        )
+                        parked_market = self._parked_market_row(connection, row["mint"])
+                        if parked_market is None:
+                            self._create_market(
+                                connection,
+                                token_mint=row["mint"],
+                                symbol=row["symbol"],
+                                created_at=captured_timestamp,
+                                starting_price_usd=price_pair.price_usd,
+                                is_frontend_visible=True,
+                            )
+                        else:
+                            self._activate_parked_market(
+                                connection,
+                                market_id=parked_market["id"],
+                                symbol=row["symbol"],
+                                activated_at=captured_timestamp,
+                                starting_price_usd=price_pair.price_usd,
+                            )
                 captured_rows.append(
                     {
                         "mint": row["mint"],
@@ -2340,6 +2350,7 @@ class MarketStore:
             """
         ).fetchall()
         migrated_count = 0
+        parked_count = 0
         pruned_count = 0
         for row in legacy_rows:
             starting_price_usd = self._legacy_market_starting_price(connection, row)
@@ -2347,6 +2358,17 @@ class MarketStore:
                 if self._legacy_market_can_be_pruned(connection, row):
                     connection.execute("DELETE FROM markets WHERE id = ?", [row["id"]])
                     pruned_count += 1
+                    continue
+                if self._legacy_market_can_be_parked(connection, row):
+                    connection.execute(
+                        """
+                        UPDATE markets
+                        SET question = ?, is_frontend_visible = 0, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        [seed_market_question(row["symbol"]), utc_now(), row["id"]],
+                    )
+                    parked_count += 1
                     continue
                 raise RuntimeError(
                     "Cannot migrate legacy market "
@@ -2380,10 +2402,11 @@ class MarketStore:
                 ],
             )
             migrated_count += 1
-        if migrated_count or pruned_count:
+        if migrated_count or parked_count or pruned_count:
             logger.info(
-                "Migrated {} legacy markets in place and pruned {} dead legacy markets.",
+                "Migrated {} legacy markets in place, parked {} address-preserving legacy markets, and pruned {} dead legacy markets.",
                 migrated_count,
+                parked_count,
                 pruned_count,
             )
 
@@ -2422,6 +2445,21 @@ class MarketStore:
     def _legacy_market_can_be_pruned(connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
         if row["state"] != "awaiting_liquidity" or row["market_start"] is not None or row["liquidity_deposit_address"] is not None:
             return False
+        return MarketStore._legacy_market_has_no_attached_state(connection, row["id"])
+
+    @staticmethod
+    def _legacy_market_can_be_parked(connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
+        if row["state"] != "awaiting_liquidity" or row["market_start"] is not None or row["liquidity_deposit_address"] is None:
+            return False
+        return MarketStore._legacy_market_has_no_attached_state(connection, row["id"], allow_liquidity_account=True)
+
+    @staticmethod
+    def _legacy_market_has_no_attached_state(
+        connection: sqlite3.Connection,
+        market_id: int,
+        *,
+        allow_liquidity_account: bool = False,
+    ) -> bool:
         for table_name in (
             "market_liquidity_accounts",
             "market_liquidity_deposits",
@@ -2435,9 +2473,67 @@ class MarketStore:
             "market_payouts",
             "market_revenue_sweeps",
         ):
-            if connection.execute(f"SELECT 1 FROM {table_name} WHERE market_id = ? LIMIT 1", [row["id"]]).fetchone() is not None:
+            if allow_liquidity_account and table_name == "market_liquidity_accounts":
+                continue
+            if connection.execute(f"SELECT 1 FROM {table_name} WHERE market_id = ? LIMIT 1", [market_id]).fetchone() is not None:
                 return False
         return True
+
+    @staticmethod
+    def _parked_market_row(connection: sqlite3.Connection, token_mint: str) -> sqlite3.Row | None:
+        return connection.execute(
+            """
+            SELECT *
+            FROM markets
+            WHERE token_mint = ?
+              AND is_frontend_visible = 0
+              AND state = 'awaiting_liquidity'
+              AND starting_price_usd IS NULL
+            ORDER BY sequence_number DESC, id DESC
+            LIMIT 1
+            """,
+            [token_mint],
+        ).fetchone()
+
+    def _activate_parked_market(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        market_id: int,
+        symbol: str,
+        activated_at: str,
+        starting_price_usd: Decimal,
+    ) -> None:
+        expiry = (self._parse_timestamp(activated_at) + self._market_duration).isoformat()
+        connection.execute(
+            """
+            UPDATE markets
+            SET
+                question = ?,
+                starting_price_usd = ?,
+                threshold_price_usd = ?,
+                range_floor_price_usd = ?,
+                range_ceiling_price_usd = ?,
+                is_frontend_visible = 1,
+                superseded_by_market_id = NULL,
+                superseded_at = NULL,
+                created_at = ?,
+                expiry = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            [
+                seed_market_question(symbol),
+                format_decimal(starting_price_usd),
+                format_decimal(starting_price_usd * self._resolution_threshold_fraction),
+                format_decimal(starting_price_usd * self._rollover_lower_bound_fraction),
+                format_decimal(starting_price_usd * self._rollover_upper_bound_fraction),
+                activated_at,
+                expiry,
+                activated_at,
+                market_id,
+            ],
+        )
 
     @staticmethod
     def _outstanding_treasury_debt_atomic(connection: sqlite3.Connection) -> int:

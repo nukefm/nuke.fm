@@ -49,43 +49,19 @@
       </p>
     </article>
     <article class="decision-card">
-      <p class="decision-label">Price read</p>
-      <p class="decision-value">
-        {% if market.yes_price_usd and market.no_price_usd %}
-        YES {{ usd_display(market.yes_price_usd) }} / NO {{ usd_display(market.no_price_usd) }}
-        {% else %}
-        No live PM pricing
-        {% endif %}
-      </p>
-      <p class="decision-copy">
-        {% if market.yes_price_usd and market.no_price_usd %}
-        This is the current PM skew.
-        {% else %}
-        The first seed opens pricing.
-        {% endif %}
-      </p>
+      <p class="decision-label">PM liquidity</p>
+      <p class="decision-value">{{ usd_display(market.total_liquidity_usdc) or "PM liquidity pending" }}</p>
+      <p class="decision-copy">Current pool depth.</p>
     </article>
     <article class="decision-card">
-      <p class="decision-label">Break level</p>
-      <p class="decision-value">{{ usd_display(market.threshold_price_usd) or "No threshold yet" }}</p>
-      <p class="decision-copy">
-        {% if market.drawdown_fraction %}
-        Current drawdown is {{ market.drawdown_fraction }} from ATH.
-        {% else %}
-        Threshold appears after the market opens and snapshots start landing.
-        {% endif %}
-      </p>
+      <p class="decision-label">PM 24h volume</p>
+      <p class="decision-value">{{ usd_display(market.pm_volume_24h_usdc) }}</p>
+      <p class="decision-copy">Trailing 24h PM trades.</p>
     </article>
     <article class="decision-card">
-      <p class="decision-label">Token tape</p>
+      <p class="decision-label">Token cap</p>
       <p class="decision-value">{{ usd_display(market.underlying_market_cap_usd) or "Market cap pending" }}</p>
-      <p class="decision-copy">
-        {% if market.underlying_volume_24h_usd %}
-        24h volume {{ usd_display(market.underlying_volume_24h_usd) }}.
-        {% else %}
-        24h volume not captured yet.
-        {% endif %}
-      </p>
+      <p class="decision-copy">Underlying token market cap.</p>
     </article>
   </section>
 
@@ -170,27 +146,27 @@
   <article class="detail-card">
     <div class="detail-section-heading">
       <div>
-        <p class="eyebrow">Token Tape</p>
-        <h2>Underlying token context</h2>
+        <p class="eyebrow">Series metadata</p>
+        <h2>Market context</h2>
       </div>
-      <p class="section-copy">Use this to decide how much real token activity sits underneath the PM setup.</p>
+      <p class="section-copy">Lifecycle details and launch context that stay useful even when the signal is paused.</p>
     </div>
     <dl class="metric-grid detail-metric-grid">
       <div>
-        <dt>Market Cap</dt>
-        <dd>{{ usd_display(market.underlying_market_cap_usd) or "Metrics not captured yet" }}</dd>
-      </div>
-      <div>
-        <dt>24h Volume</dt>
-        <dd>{{ usd_display(market.underlying_volume_24h_usd) or "Metrics not captured yet" }}</dd>
-      </div>
-      <div>
-        <dt>PM Liquidity</dt>
-        <dd>{{ usd_display(market.total_liquidity_usdc) or "Liquidity not captured yet" }}</dd>
-      </div>
-      <div>
         <dt>Series</dt>
         <dd>{{ market.sequence_number }}</dd>
+      </div>
+      <div>
+        <dt>Market Start</dt>
+        <dd>{{ market.market_start or "Starts after first liquidity deposit" }}</dd>
+      </div>
+      <div>
+        <dt>Expiry</dt>
+        <dd>{{ market.expiry or "Not started" }}</dd>
+      </div>
+      <div>
+        <dt>Liquidity Deposit</dt>
+        <dd>{{ market.liquidity_deposit_address or "Pending assignment" }}</dd>
       </div>
       <div>
         <dt>Launch Feed</dt>

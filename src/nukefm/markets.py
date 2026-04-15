@@ -194,7 +194,18 @@ class MarketStore:
     def list_token_cards(self, *, sort_by: str | None = None, sort_direction: str = "desc") -> list[dict]:
         with connect_database(self._database_path) as connection:
             rows = self._list_current_market_rows(connection)
-            token_cards = [self._serialize_token_card(connection, row) for row in rows]
+            pm_volume_24h_by_market_id = self._market_volume_24h_by_market_id(
+                connection,
+                [row["id"] for row in rows],
+            )
+            token_cards = [
+                self._serialize_token_card(
+                    connection,
+                    row,
+                    pm_volume_24h_atomic=pm_volume_24h_by_market_id.get(row["id"], 0),
+                )
+                for row in rows
+            ]
 
             normalized_sort_by = None if sort_by in (None, "") else sort_by
             if normalized_sort_by is None:
@@ -306,6 +317,8 @@ class MarketStore:
                 """,
                 [mint],
             ).fetchall()
+            market_ids = [current_market["id"], *[row["id"] for row in past_market_rows]]
+            pm_volume_24h_by_market_id = self._market_volume_24h_by_market_id(connection, market_ids)
 
             return {
                 "mint": token_row["mint"],
@@ -314,8 +327,19 @@ class MarketStore:
                 "image_url": token_row["image_url"],
                 "launched_at": token_row["launched_at"],
                 "creator": token_row["creator"],
-                "current_market": self._serialize_market(connection, current_market),
-                "past_markets": [self._serialize_market(connection, row) for row in past_market_rows],
+                "current_market": self._serialize_market(
+                    connection,
+                    current_market,
+                    pm_volume_24h_atomic=pm_volume_24h_by_market_id.get(current_market["id"], 0),
+                ),
+                "past_markets": [
+                    self._serialize_market(
+                        connection,
+                        row,
+                        pm_volume_24h_atomic=pm_volume_24h_by_market_id.get(row["id"], 0),
+                    )
+                    for row in past_market_rows
+                ],
                 "recent_activity": self._recent_activity(connection, current_market, token_row["updated_at"]),
             }
 
@@ -1326,17 +1350,33 @@ class MarketStore:
 
         return best_cash_out, best_share_amount
 
-    def _serialize_token_card(self, connection: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    def _serialize_token_card(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+        *,
+        pm_volume_24h_atomic: int,
+    ) -> dict:
         return {
             "mint": row["mint"],
             "symbol": row["symbol"],
             "name": row["name"],
             "image_url": row["image_url"],
             "launched_at": row["launched_at"],
-            "current_market": self._serialize_market(connection, row),
+            "current_market": self._serialize_market(
+                connection,
+                row,
+                pm_volume_24h_atomic=pm_volume_24h_atomic,
+            ),
         }
 
-    def _serialize_market(self, connection: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    def _serialize_market(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+        *,
+        pm_volume_24h_atomic: int,
+    ) -> dict:
         pool = self._load_pool(connection, row["id"], required=False)
         latest_snapshot = self._latest_snapshot_row(connection, row["id"])
         latest_token_metrics = self._latest_token_metrics_row(connection, row["token_mint"])
@@ -1361,6 +1401,7 @@ class MarketStore:
             "drawdown_fraction": None if latest_snapshot is None else format_decimal(parse_decimal(latest_snapshot["drawdown_fraction"])),
             "threshold_price_usd": None if latest_snapshot is None else format_decimal(parse_decimal(latest_snapshot["threshold_price_usd"])),
             "total_liquidity_usdc": None if pool is None else format_usdc_amount(pool.total_liquidity_atomic),
+            "pm_volume_24h_usdc": format_usdc_amount(pm_volume_24h_atomic),
             "underlying_volume_24h_usd": None
             if latest_token_metrics is None or latest_token_metrics["underlying_volume_h24_usd"] is None
             else format_decimal(parse_decimal(latest_token_metrics["underlying_volume_h24_usd"])),
@@ -1525,6 +1566,33 @@ class MarketStore:
             ORDER BY COALESCE(tokens.launched_at, tokens.created_at) DESC, tokens.symbol ASC
             """
         ).fetchall()
+
+    @staticmethod
+    def _market_volume_24h_by_market_id(
+        connection: sqlite3.Connection,
+        market_ids: list[int],
+    ) -> dict[int, int]:
+        unique_market_ids = list(dict.fromkeys(market_ids))
+        if not unique_market_ids:
+            return {}
+
+        reference_time = datetime.fromisoformat(utc_now())
+        window_start = (reference_time - timedelta(hours=24)).isoformat()
+        placeholders = ", ".join("?" for _ in unique_market_ids)
+        rows = connection.execute(
+            f"""
+            SELECT
+                market_id,
+                COALESCE(SUM(cash_amount_atomic), 0) AS pm_volume_24h_atomic
+            FROM market_trades
+            WHERE market_id IN ({placeholders})
+              AND created_at >= ?
+              AND created_at <= ?
+            GROUP BY market_id
+            """,
+            [*unique_market_ids, window_start, reference_time.isoformat()],
+        ).fetchall()
+        return {row["market_id"]: row["pm_volume_24h_atomic"] for row in rows}
 
     def _latest_token_metrics_row(self, connection: sqlite3.Connection, token_mint: str) -> sqlite3.Row | None:
         return connection.execute(

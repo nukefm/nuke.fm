@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -6,7 +7,7 @@ from nukefm.amounts import parse_usdc_amount
 from nukefm.bags import BagsToken
 from nukefm.catalog import Catalog
 from nukefm.dexscreener import DexScreenerPair
-from nukefm.database import connect_database
+from nukefm.database import connect_database, utc_now
 from nukefm.markets import MarketStore
 from nukefm.treasury import DepositAccountAddresses
 
@@ -509,6 +510,77 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     for (sort_by, sort_direction), expected_mints in expected_orders.items():
         sorted_cards = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)
         assert [card["mint"] for card in sorted_cards] == expected_mints
+
+
+def test_current_market_serialization_uses_trailing_24h_pm_volume(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    catalog = Catalog(database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint="MintVolume",
+                name="Volume",
+                symbol="VOL",
+                image_url=None,
+                launched_at="2026-04-15T10:00:00+00:00",
+                creator=None,
+            )
+        ]
+    )
+
+    account_store = AccountStore(database_path)
+    account_store.initialize()
+    user = account_store.ensure_user("11111111111111111111111111111112")
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+
+    market_id = market_store.get_token_detail("MintVolume")["current_market"]["id"]
+    reference_time = datetime.fromisoformat(utc_now())
+    recent_trade_time = reference_time.isoformat()
+    old_trade_time = (reference_time - timedelta(hours=25)).isoformat()
+
+    with connect_database(database_path) as connection:
+        for cash_amount_atomic, created_at in ((1_500_000, old_trade_time), (2_500_000, recent_trade_time)):
+            connection.execute(
+                """
+                INSERT INTO market_trades (
+                    user_id,
+                    market_id,
+                    outcome,
+                    side,
+                    cash_amount_atomic,
+                    share_amount_atomic,
+                    before_yes_price,
+                    before_no_price,
+                    after_yes_price,
+                    after_no_price,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    user["id"],
+                    market_id,
+                    "yes",
+                    "buy",
+                    cash_amount_atomic,
+                    cash_amount_atomic,
+                    "0.5",
+                    "0.5",
+                    "0.5",
+                    "0.5",
+                    created_at,
+                ],
+            )
+
+    token = market_store.get_token_detail("MintVolume")
+    assert token is not None
+    assert token["current_market"]["pm_volume_24h_usdc"] == "2.5"
+
+    token_cards = market_store.list_token_cards()
+    assert token_cards[0]["current_market"]["pm_volume_24h_usdc"] == "2.5"
 
 
 def test_weekly_auto_seed_targets_top_market_caps_once_per_week(tmp_path: Path) -> None:

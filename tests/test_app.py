@@ -156,6 +156,7 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert [token["symbol"] for token in token_response.json()["tokens"]] == ["OMEGA", "GAMMA", "ALPHA"]
     gamma_token = next(token for token in token_response.json()["tokens"] if token["symbol"] == "GAMMA")
     assert gamma_token["current_market"]["liquidity_deposit_address"] == "market-deposit-2"
+    assert gamma_token["current_market"]["pm_volume_24h_usdc"] == "0"
 
     sorted_token_response = client.get("/v1/public/tokens?sort_by=market_liquidity&sort_direction=desc")
     assert sorted_token_response.status_code == 200
@@ -167,6 +168,9 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert 'option value="market_liquidity" selected' in page_response.text
     assert 'option value="desc" selected' in page_response.text
     assert "$20" in page_response.text
+    assert "PM liquidity" in page_response.text
+    assert "PM 24h volume" in page_response.text
+    assert "Token cap" in page_response.text
     assert page_response.text.index("<p class=\"symbol-badge\">ALPHA</p>") < page_response.text.index(
         "<p class=\"symbol-badge\">GAMMA</p>"
     )
@@ -185,10 +189,13 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert detail_api_market["reference_price_usd"] == "0.000000000123"
     assert detail_api_market["threshold_price_usd"] == "0.000000000045"
     assert detail_api_market["underlying_market_cap_usd"] == "0.000000000321"
+    assert detail_api_market["pm_volume_24h_usdc"] == "0"
 
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
     assert "Will GAMMA nuke by 90 days after this market opens?" in detail_response.text
+    assert "PM 24h volume" in detail_response.text
+    assert '<p class="decision-value">$0</p>' in detail_response.text
     assert "$0.000000000123" in detail_response.text
     assert "$0.000000000321" in detail_response.text
     assert "Liquidity credit of $5 deepened the pool." in detail_response.text

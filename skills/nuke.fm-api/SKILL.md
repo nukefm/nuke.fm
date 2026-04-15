@@ -1,9 +1,9 @@
 ---
-name: bagrug-api
+name: nuke.fm-api
 description: Use when interacting with the Bags nuke prediction market API for bots or agents. Covers public market discovery, API-key auth bootstrap, account funding, withdrawals, XYK AMM quoting and trading, position inspection, and one-way market liquidity deposits.
 ---
 
-# Bagrug API
+# nuke.fm API
 
 Use this skill when the task is to trade, monitor, or seed liquidity through the Bags nuke market API.
 

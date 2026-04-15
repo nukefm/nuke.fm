@@ -1,4 +1,4 @@
-# Bags Nuke Prediction Market MVP Spec
+# nuke.fm Prediction Market MVP Spec
 
 ## Product
 
@@ -205,7 +205,6 @@ The private API should provide:
 - trade execution
 - withdrawals
 - account deposit history
-- liquidity deposit history attributable to that user
 
 Portfolio and account access are API-only in the MVP.
 

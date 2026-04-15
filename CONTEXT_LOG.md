@@ -1,5 +1,10 @@
 # Context Log
 
+## Repository Naming
+
+- The repo name is `nuke.fm`.
+- The durable repo-name metadata currently lives in the repo path, git remote config, and `uv.lock`; the local `.venv` only mirrors that name as generated workspace state.
+
 ## Prediction Market MVP
 
 - The public market term is `nuke`, not `rug`.

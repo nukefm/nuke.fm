@@ -295,6 +295,32 @@ h1,
   margin: 0.75rem 0 1rem;
 }
 
+.board-toggle-row {
+  display: grid;
+  gap: 0.55rem;
+  justify-items: start;
+}
+
+.toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.toggle-chip-active {
+  background: var(--accent-soft);
+  border-color: rgba(191, 90, 49, 0.18);
+  color: var(--accent);
+}
+
 .section-heading h2,
 .detail-card h2 {
   font-size: 1.5rem;

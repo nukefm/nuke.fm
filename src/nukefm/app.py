@@ -306,16 +306,30 @@ def create_app(
         return withdrawal
 
     @app.get("/", response_class=HTMLResponse)
-    def market_list_page(request: Request, sort_by: str | None = None, sort_direction: str = "desc"):
+    def market_list_page(
+        request: Request,
+        sort_by: str | None = None,
+        sort_direction: str = "desc",
+        show_uninitialized: bool = False,
+    ):
         try:
-            tokens = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)
+            all_tokens = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+        visible_tokens = (
+            all_tokens
+            if show_uninitialized
+            else [token for token in all_tokens if token["current_market"]["market_start"] is not None]
+        )
         return TEMPLATES.TemplateResponse(
             request=request,
             name="index.html",
             context={
-                "tokens": tokens,
+                "tokens": visible_tokens,
+                "total_token_count": len(all_tokens),
+                "hidden_uninitialized_count": len(all_tokens) - len(visible_tokens),
+                "show_uninitialized": show_uninitialized,
                 "refresh_seconds": settings.frontend_refresh_seconds,
                 **_token_card_sort_context(sort_by, sort_direction),
             },

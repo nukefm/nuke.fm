@@ -59,6 +59,14 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
                 image_url=None,
                 launched_at="2026-04-15T12:00:00+00:00",
                 creator=None,
+            ),
+            BagsToken(
+                mint="Mint555",
+                name="Omega",
+                symbol="OMEGA",
+                image_url=None,
+                launched_at="2026-04-16T12:00:00+00:00",
+                creator=None,
             )
         ]
     )
@@ -88,12 +96,13 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
 
     token_response = client.get("/v1/public/tokens")
     assert token_response.status_code == 200
-    assert token_response.json()["tokens"][0]["symbol"] == "GAMMA"
-    assert token_response.json()["tokens"][0]["current_market"]["liquidity_deposit_address"] == "market-deposit-2"
+    assert [token["symbol"] for token in token_response.json()["tokens"]] == ["OMEGA", "GAMMA", "ALPHA"]
+    gamma_token = next(token for token in token_response.json()["tokens"] if token["symbol"] == "GAMMA")
+    assert gamma_token["current_market"]["liquidity_deposit_address"] == "market-deposit-2"
 
     sorted_token_response = client.get("/v1/public/tokens?sort_by=market_liquidity&sort_direction=desc")
     assert sorted_token_response.status_code == 200
-    assert [token["symbol"] for token in sorted_token_response.json()["tokens"]] == ["ALPHA", "GAMMA"]
+    assert [token["symbol"] for token in sorted_token_response.json()["tokens"]] == ["ALPHA", "GAMMA", "OMEGA"]
 
     page_response = client.get("/?sort_by=market_liquidity&sort_direction=desc")
     assert page_response.status_code == 200
@@ -103,6 +112,13 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
         "<p class=\"symbol-badge\">GAMMA</p>"
     )
     assert "Scan which token markets are actionable right now." in page_response.text
+    assert "OMEGA" not in page_response.text
+    assert "Show uninitialized" in page_response.text
+
+    toggle_response = client.get("/?sort_by=market_liquidity&sort_direction=desc&show_uninitialized=1")
+    assert toggle_response.status_code == 200
+    assert "OMEGA" in toggle_response.text
+    assert "Hide uninitialized" in toggle_response.text
 
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200

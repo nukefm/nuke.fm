@@ -29,7 +29,7 @@
     </div>
     <dl class="hero-stats">
       <div>
-        <dt>Tracked Tokens</dt>
+        <dt>Shown Tokens</dt>
         <dd>{{ tokens|length }}</dd>
       </div>
       <div>
@@ -37,8 +37,8 @@
         <dd>{{ counts.open }}</dd>
       </div>
       <div>
-        <dt>Waiting On Seed</dt>
-        <dd>{{ counts.awaiting }}</dd>
+        <dt>Hidden Uninit</dt>
+        <dd>{{ hidden_uninitialized_count }}</dd>
       </div>
       <div>
         <dt>Signal Paused</dt>
@@ -55,6 +55,7 @@
     <h2>Open the token pages that matter</h2>
   </div>
   <form method="get">
+    <input type="hidden" name="show_uninitialized" value="{% if show_uninitialized %}1{% else %}0{% endif %}">
     <label>
       Sort by
       <select name="sort_by">
@@ -74,9 +75,20 @@
     </label>
     <button type="submit">Apply</button>
   </form>
-  <p class="section-copy">
-    Every token has one current forward market. Resolved markets roll straight into the next current series.
-  </p>
+  <div class="board-toggle-row">
+    {% if show_uninitialized %}
+    <a class="toggle-chip toggle-chip-active" href="/?{% if sort_by %}sort_by={{ sort_by }}&{% endif %}sort_direction={{ sort_direction }}">Hide uninitialized</a>
+    {% else %}
+    <a class="toggle-chip" href="/?show_uninitialized=1{% if sort_by %}&sort_by={{ sort_by }}{% endif %}&sort_direction={{ sort_direction }}">Show uninitialized</a>
+    {% endif %}
+    <p class="section-copy">
+      {% if show_uninitialized %}
+      Showing all current markets, including pages that have not started yet.
+      {% else %}
+      Default view shows only initialized markets. {{ hidden_uninitialized_count }} uninitialized markets are hidden until you reveal them.
+      {% endif %}
+    </p>
+  </div>
 </section>
 
 <section class="market-grid">
@@ -181,8 +193,13 @@
 </section>
 {% else %}
 <section class="empty-state">
+  {% if total_token_count == 0 %}
   <h1>No tokens ingested yet</h1>
   <p>Set <code>BAGS_API_KEY</code>, run <code>uv run --env-file .env python -m nukefm ingest</code>, then refresh this page.</p>
+  {% else %}
+  <h1>No initialized markets in view</h1>
+  <p>All {{ hidden_uninitialized_count }} current markets are still uninitialized. Use the toggle above to show them.</p>
+  {% endif %}
 </section>
 {% endif %}
 

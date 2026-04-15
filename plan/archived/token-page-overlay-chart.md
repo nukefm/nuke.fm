@@ -96,3 +96,12 @@ The chart should be visually clean, easy to read, and aligned on one shared time
 ## Unresolved Questions
 
 - None for planning.
+
+## Status
+
+- Completed on the coordinator branch after integrating the dedicated worktree commit.
+- Added `market_chart_snapshots` plus the `snapshot-market-charts` operator command for 5-minute aligned chart capture.
+- Extended token detail payloads with `current_market_chart` for the current series.
+- Rendered a dual-axis overlay chart on the token page using Chart.js without adding a frontend build step.
+- Recorded the charting rationale in `CONTEXT_LOG.md` and documented the new command in `README.md`.
+- Validation completed with `uv run pytest tests/test_markets.py tests/test_app.py tests/test_cli.py` and `uv run pytest`.

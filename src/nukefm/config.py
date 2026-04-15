@@ -31,7 +31,6 @@ class Settings:
     deposit_master_seed_secret_name: str
     treasury_seed_secret_name: str
     jupiter_tokens_base_url: str = "https://api.jup.ag/tokens/v2"
-    bitquery_api_key: str | None = None
 
 
 def load_settings() -> Settings:
@@ -56,5 +55,4 @@ def load_settings() -> Settings:
         secret_tool_service=config["secret_tool_service"],
         deposit_master_seed_secret_name=config["deposit_master_seed_secret_name"],
         treasury_seed_secret_name=config["treasury_seed_secret_name"],
-        bitquery_api_key=os.getenv("BITQUERY_API_KEY") or None,
     )

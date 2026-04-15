@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
+import math
 
 import requests
 
 
-BITQUERY_GRAPHQL_URL = "https://streaming.bitquery.io/graphql"
+JUPITER_CHARTS_URL = "https://datapi.jup.ag/v2/charts"
+FIFTEEN_MINUTE_SECONDS = 15 * 60
 
 
 class SettlementPriceClient(Protocol):
@@ -14,59 +17,58 @@ class SettlementPriceClient(Protocol):
         ...
 
 
-class BitquerySettlementPriceClient(SettlementPriceClient):
-    def __init__(self, *, api_key: str, base_url: str = BITQUERY_GRAPHQL_URL) -> None:
+class JupiterChartsSettlementPriceClient(SettlementPriceClient):
+    def __init__(self, *, base_url: str = JUPITER_CHARTS_URL) -> None:
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
         self._session.headers.update(
             {
                 "Accept": "application/json",
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
+                "Origin": "https://jup.ag",
+                "Referer": "https://jup.ag/",
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+                ),
             }
         )
 
     def get_rolling_median_price(self, token_mint: str, *, start_at: str, end_at: str) -> Decimal:
-        response = self._session.post(
-            self._base_url,
-            json={
-                "query": """
-                    query RollingMedianPrice($token: String!, $start: DateTime!, $end: DateTime!) {
-                      Solana(dataset: combined) {
-                        DEXTradeByTokens(
-                          limit: { count: 1 }
-                          where: {
-                            Block: { Time: { since: $start, till: $end } }
-                            Transaction: { Result: { Success: true } }
-                            Trade: {
-                              Currency: { MintAddress: { is: $token } }
-                              PriceAsymmetry: { lt: 0.01 }
-                            }
-                          }
-                        ) {
-                          median_price: median(of: Trade_PriceInUSD)
-                        }
-                      }
-                    }
-                """,
-                "variables": {
-                    "token": token_mint,
-                    "start": start_at,
-                    "end": end_at,
-                },
+        start_time = datetime.fromisoformat(start_at)
+        end_time = datetime.fromisoformat(end_at)
+        duration_seconds = max((end_time - start_time).total_seconds(), 0)
+        candle_count = max(1, math.ceil(duration_seconds / FIFTEEN_MINUTE_SECONDS))
+
+        response = self._session.get(
+            f"{self._base_url}/{token_mint}",
+            params={
+                "interval": "15_MINUTE",
+                "to": int(end_time.timestamp() * 1000),
+                "candles": candle_count,
+                "type": "price",
+                "quote": "usd",
             },
             timeout=30,
         )
         response.raise_for_status()
         payload = response.json()
-        if payload.get("errors"):
-            raise RuntimeError(payload["errors"])
 
-        rows = payload.get("data", {}).get("Solana", {}).get("DEXTradeByTokens") or []
-        if not rows:
+        candle_prices: list[Decimal] = []
+        for candle in payload.get("candles") or []:
+            candle_time = datetime.fromtimestamp(candle["time"], tz=end_time.tzinfo)
+            if candle_time < start_time or candle_time > end_time:
+                continue
+            candle_prices.append(Decimal(str(candle["close"])))
+
+        if not candle_prices:
             raise ValueError(f"No settlement prices returned for {token_mint} between {start_at} and {end_at}.")
 
-        median_price = rows[0].get("median_price")
-        if median_price is None:
-            raise ValueError(f"No median settlement price returned for {token_mint} between {start_at} and {end_at}.")
-        return Decimal(str(median_price))
+        return self._median_decimal(candle_prices)
+
+    @staticmethod
+    def _median_decimal(values: list[Decimal]) -> Decimal:
+        ordered_values = sorted(values)
+        middle_index = len(ordered_values) // 2
+        if len(ordered_values) % 2 == 1:
+            return ordered_values[middle_index]
+        return (ordered_values[middle_index - 1] + ordered_values[middle_index]) / Decimal("2")

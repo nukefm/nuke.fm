@@ -16,7 +16,7 @@ This repository currently includes these MVP slices:
 - run a weighted YES/NO AMM per open market
 - reconcile one-way market liquidity deposits into pool depth and cash backing
 - quote and execute API-only trades against the weighted pool
-- capture hourly settlement snapshots from a rolling 24h median of historical trade prices
+- capture hourly settlement snapshots from a rolling 24h median of Jupiter USD price candles
 - track per-market ATH, threshold, and drawdown from those median prices
 - capture Jupiter token metrics and sort the public market board by liquidity, dump %, underlying volume, or underlying market cap
 - debt-fund a weekly $1 PM seed into the top 10 current markets by underlying market cap
@@ -93,8 +93,7 @@ MVP. Important current constraints:
 - Python 3.13
 - `BAGS_API_KEY` in `.env` for feed ingestion
 - `secret-tool` entries for the deposit master seed and treasury seed
-- network access to Bitquery for hourly settlement snapshot jobs
-- `BITQUERY_API_KEY` in `.env` for settlement snapshot jobs, plus an active Bitquery billing period for the GraphQL endpoint
+- network access to Jupiter charts for hourly settlement snapshot jobs
 
 ## Commands
 

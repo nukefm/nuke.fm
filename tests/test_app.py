@@ -171,3 +171,4 @@ def test_board_toggle_stays_visible_when_all_markets_are_uninitialized(tmp_path:
     assert page_response.status_code == 200
     assert "No initialized markets in view" in page_response.text
     assert "Show uninitialized" in page_response.text
+    assert 'option value="underlying_market_cap" selected' in page_response.text

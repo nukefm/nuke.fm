@@ -16,7 +16,7 @@ from .dexscreener import DexScreenerClient
 from .jupiter import JupiterTokensClient
 from .logging_utils import configure_logging
 from .markets import MarketStore
-from .settlement import BitquerySettlementPriceClient
+from .settlement import JupiterChartsSettlementPriceClient
 from .treasury import SolanaTreasury
 
 
@@ -112,10 +112,8 @@ def main() -> None:
         return
 
     if arguments.command == "snapshot-markets":
-        if settings.bitquery_api_key is None:
-            raise SystemExit("BITQUERY_API_KEY is required to snapshot markets from settlement trade data.")
         snapshots = market_store.capture_hourly_snapshots(
-            BitquerySettlementPriceClient(api_key=settings.bitquery_api_key),
+            JupiterChartsSettlementPriceClient(),
         )
         logger.info(f"Captured {len(snapshots)} market snapshot updates.")
         return

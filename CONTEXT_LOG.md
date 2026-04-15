@@ -64,5 +64,5 @@
 
 ## Live Data Dependencies
 
-- The token-metric sync is operational with Jupiter after throttling requests, but the settlement snapshot job still depends on Bitquery billing, not just a bearer token. When Bitquery returns `402 No active billing period`, reference/ATH/drawdown/threshold fields cannot be rebuilt from the intended data source.
+- Settlement snapshots now use Jupiter 15-minute USD price candles instead of Bitquery. That removes billing as an operational dependency and keeps the snapshot job aligned with the same market-data family already used for token metrics.
 - Market-liquidity account creation is now retried on Solana RPC `429` responses, and the bulk account-creation path prioritizes already-open markets first so the frontend-visible seeded markets recover before the long tail of awaiting-liquidity markets.

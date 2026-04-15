@@ -778,8 +778,8 @@ dt {
 
   .hero h1,
   .detail-heading h1 {
-    max-width: 12ch;
-    font-size: clamp(2.35rem, 12vw, 4rem);
+    max-width: none;
+    font-size: clamp(2.15rem, 9vw, 3.25rem);
   }
 
   .section-heading {
@@ -801,6 +801,25 @@ dt {
   .page-shell {
     width: min(100% - 1rem, 100%);
     padding-top: 1rem;
+  }
+
+  .site-header {
+    gap: 0.8rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .brand {
+    font-size: 2.3rem;
+  }
+
+  .tagline,
+  .meta-note,
+  .hero-copy,
+  .market-state-note,
+  .availability-note,
+  .summary-copy,
+  .section-copy {
+    font-size: 0.92rem;
   }
 
   .hero,
@@ -845,10 +864,21 @@ dt {
   }
 
   .detail-heading .headline-question {
-    font-size: 1.08rem;
+    font-size: 1rem;
   }
 
-  .site-header {
-    margin-bottom: 1.1rem;
+  .meta-note {
+    display: none;
+  }
+
+  .action-meta-grid dd,
+  .detail-metric-grid dd,
+  .summary-pair-list dd {
+    overflow-wrap: anywhere;
+  }
+
+  .detail-code-strip code,
+  .address-block {
+    font-size: 0.78rem;
   }
 }

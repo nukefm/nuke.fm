@@ -9,6 +9,7 @@
   "bags_base_url": "https://public-api-v2.bags.fm/api/v1",
   "bags_launch_feed_path": "/token-launch/feed",
   "dexscreener_base_url": "https://api.dexscreener.com",
+  "jupiter_tokens_base_url": "https://api.jup.ag/tokens/v2",
   "solana_rpc_url": "https://api.mainnet-beta.solana.com",
   "solana_usdc_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
   "secret_tool_service": "nuke.fm",

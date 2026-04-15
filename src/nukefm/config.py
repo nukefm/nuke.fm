@@ -30,6 +30,7 @@ class Settings:
     secret_tool_service: str
     deposit_master_seed_secret_name: str
     treasury_seed_secret_name: str
+    jupiter_tokens_base_url: str = "https://api.jup.ag/tokens/v2"
     bitquery_api_key: str | None = None
 
 
@@ -49,6 +50,7 @@ def load_settings() -> Settings:
         bags_launch_feed_path=config["bags_launch_feed_path"],
         bags_api_key=os.getenv("BAGS_API_KEY") or None,
         dexscreener_base_url=config["dexscreener_base_url"].rstrip("/"),
+        jupiter_tokens_base_url=config.get("jupiter_tokens_base_url", "https://api.jup.ag/tokens/v2").rstrip("/"),
         solana_rpc_url=config["solana_rpc_url"],
         solana_usdc_mint=config["solana_usdc_mint"],
         secret_tool_service=config["secret_tool_service"],

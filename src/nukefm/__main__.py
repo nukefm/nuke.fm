@@ -12,6 +12,7 @@ from .bags import BagsClient
 from .catalog import Catalog
 from .config import load_settings
 from .dexscreener import DexScreenerClient
+from .jupiter import JupiterTokensClient
 from .logging_utils import configure_logging
 from .markets import MarketStore
 from .settlement import BitquerySettlementPriceClient
@@ -84,7 +85,7 @@ def main() -> None:
 
     if arguments.command == "sync-token-metrics":
         captured_metrics = market_store.capture_token_metrics(
-            DexScreenerClient(base_url=settings.dexscreener_base_url),
+            JupiterTokensClient(base_url=settings.jupiter_tokens_base_url),
         )
         logger.info(f"Captured {len(captured_metrics)} token metric snapshots.")
         return

@@ -7,6 +7,18 @@ Replace the current ATH/drawdown-based market lifecycle with a fixed-anchor mark
 - the currently frontend-visible market rolls forward to a newly created successor market when the underlying price moves outside a configurable range around that market's starting price
 - older rolled markets remain active, tradable, and later resolvable through the API, but are hidden from the frontend
 
+## Status
+
+Completed on `master` in:
+
+- `42909b1` `Implement fixed threshold market rollover`
+- `eae07ad` `Backfill legacy market lifecycle anchors`
+
+Validation completed with:
+
+- `uv run pytest tests/test_catalog.py tests/test_markets.py tests/test_app.py tests/test_private_api.py tests/test_cli.py`
+- `uv run pytest`
+
 The frontend should present the market prompt as:
 
 - `Will {symbol} nuke by {x}% by {date}?`

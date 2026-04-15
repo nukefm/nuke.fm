@@ -11,6 +11,8 @@ user="${2:-ubuntu}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 remote="${user}@${host}"
 remote_script="/tmp/nukefm-bootstrap-remote.sh"
+ssh_key="${NUKEFM_SSH_KEY:-}"
+ssh_args=()
 
 for required_command in scp ssh; do
     if ! command -v "${required_command}" >/dev/null 2>&1; then
@@ -19,5 +21,9 @@ for required_command in scp ssh; do
     fi
 done
 
-scp "${script_dir}/bootstrap-remote.sh" "${remote}:${remote_script}"
-ssh "${remote}" "chmod +x ${remote_script} && sudo DEPLOY_USER='${user}' ${remote_script} && rm -f ${remote_script}"
+if [ -n "${ssh_key}" ]; then
+    ssh_args=(-i "${ssh_key}")
+fi
+
+scp "${ssh_args[@]}" "${script_dir}/bootstrap-remote.sh" "${remote}:${remote_script}"
+ssh "${ssh_args[@]}" "${remote}" "chmod +x ${remote_script} && sudo DEPLOY_USER='${user}' ${remote_script} && rm -f ${remote_script}"

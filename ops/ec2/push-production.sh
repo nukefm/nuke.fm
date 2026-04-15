@@ -10,10 +10,15 @@ host="$1"
 user="${2:-ubuntu}"
 remote_name="${NUKEFM_PRODUCTION_REMOTE:-production}"
 remote_url="${user}@${host}:/srv/nukefm/git/nuke.fm.git"
+ssh_key="${NUKEFM_SSH_KEY:-}"
 
 if ! command -v git >/dev/null 2>&1; then
     echo "Missing required command: git" >&2
     exit 1
+fi
+
+if [ -n "${ssh_key}" ]; then
+    export GIT_SSH_COMMAND="ssh -i ${ssh_key}"
 fi
 
 if git remote get-url "${remote_name}" >/dev/null 2>&1; then

@@ -11,6 +11,8 @@ user="${2:-ubuntu}"
 remote="${user}@${host}"
 remote_root="/srv/nukefm/current"
 remote_runtime="/srv/nukefm/shared/runtime.env"
+ssh_key="${NUKEFM_SSH_KEY:-}"
+ssh_args=()
 
 for required_command in scp secret-tool ssh; do
     if ! command -v "${required_command}" >/dev/null 2>&1; then
@@ -24,11 +26,15 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
-ssh "${remote}" "install -d '${remote_root}' '${remote_root}/data'"
-scp .env "${remote}:${remote_root}/.env"
+if [ -n "${ssh_key}" ]; then
+    ssh_args=(-i "${ssh_key}")
+fi
+
+ssh "${ssh_args[@]}" "${remote}" "install -d '${remote_root}' '${remote_root}/data'"
+scp "${ssh_args[@]}" .env "${remote}:${remote_root}/.env"
 
 if [ -f "data/nukefm.sqlite3" ]; then
-    scp data/nukefm.sqlite3 "${remote}:${remote_root}/data/nukefm.sqlite3"
+    scp "${ssh_args[@]}" data/nukefm.sqlite3 "${remote}:${remote_root}/data/nukefm.sqlite3"
 fi
 
 copy_secret() {
@@ -45,10 +51,10 @@ copy_secret() {
         exit 1
     fi
 
-    printf '%s' "${secret_value}" | ssh "${remote}" "bash -lc 'source ${remote_runtime} && ${remote_root}/ops/ec2/store-secret.sh ${secret_name}'"
+    printf '%s' "${secret_value}" | ssh "${ssh_args[@]}" "${remote}" "bash -lc 'source ${remote_runtime} && ${remote_root}/ops/ec2/store-secret.sh ${secret_name}'"
 }
 
 copy_secret deposit-master-seed
 copy_secret treasury-seed
 
-ssh "${remote}" "sudo systemctl restart nukefm.service && sudo systemctl status --no-pager nukefm.service"
+ssh "${ssh_args[@]}" "${remote}" "sudo systemctl restart nukefm.service && sudo systemctl status --no-pager nukefm.service"

@@ -52,7 +52,7 @@
       <p class="decision-label">Price read</p>
       <p class="decision-value">
         {% if market.yes_price_usd and market.no_price_usd %}
-        YES {{ market.yes_price_usd }} / NO {{ market.no_price_usd }}
+        YES {{ usd_display(market.yes_price_usd) }} / NO {{ usd_display(market.no_price_usd) }}
         {% else %}
         No live PM pricing
         {% endif %}
@@ -67,7 +67,7 @@
     </article>
     <article class="decision-card">
       <p class="decision-label">Break level</p>
-      <p class="decision-value">{{ market.threshold_price_usd or "No threshold yet" }}</p>
+      <p class="decision-value">{{ usd_display(market.threshold_price_usd) or "No threshold yet" }}</p>
       <p class="decision-copy">
         {% if market.drawdown_fraction %}
         Current drawdown is {{ market.drawdown_fraction }} from ATH.
@@ -78,10 +78,10 @@
     </article>
     <article class="decision-card">
       <p class="decision-label">Token tape</p>
-      <p class="decision-value">{{ market.underlying_market_cap_usd or "Market cap pending" }}</p>
+      <p class="decision-value">{{ usd_display(market.underlying_market_cap_usd) or "Market cap pending" }}</p>
       <p class="decision-copy">
         {% if market.underlying_volume_24h_usd %}
-        24h volume {{ market.underlying_volume_24h_usd }}.
+        24h volume {{ usd_display(market.underlying_volume_24h_usd) }}.
         {% else %}
         24h volume not captured yet.
         {% endif %}
@@ -134,23 +134,23 @@
     <dl class="metric-grid detail-metric-grid">
       <div>
         <dt>YES Price</dt>
-        <dd>{{ market.yes_price_usd or "Not live yet" }}</dd>
+        <dd>{{ usd_display(market.yes_price_usd) or "Not live yet" }}</dd>
       </div>
       <div>
         <dt>NO Price</dt>
-        <dd>{{ market.no_price_usd or "Not live yet" }}</dd>
+        <dd>{{ usd_display(market.no_price_usd) or "Not live yet" }}</dd>
       </div>
       <div>
         <dt>Reference</dt>
-        <dd>{{ market.reference_price_usd or "No snapshot yet" }}</dd>
+        <dd>{{ usd_display(market.reference_price_usd) or "No snapshot yet" }}</dd>
       </div>
       <div>
         <dt>Threshold</dt>
-        <dd>{{ market.threshold_price_usd or "No threshold yet" }}</dd>
+        <dd>{{ usd_display(market.threshold_price_usd) or "No threshold yet" }}</dd>
       </div>
       <div>
         <dt>ATH</dt>
-        <dd>{{ market.ath_price_usd or "No ATH yet" }}</dd>
+        <dd>{{ usd_display(market.ath_price_usd) or "No ATH yet" }}</dd>
       </div>
       <div>
         <dt>Drawdown</dt>
@@ -178,15 +178,15 @@
     <dl class="metric-grid detail-metric-grid">
       <div>
         <dt>Market Cap</dt>
-        <dd>{{ market.underlying_market_cap_usd or "Metrics not captured yet" }}</dd>
+        <dd>{{ usd_display(market.underlying_market_cap_usd) or "Metrics not captured yet" }}</dd>
       </div>
       <div>
         <dt>24h Volume</dt>
-        <dd>{{ market.underlying_volume_24h_usd or "Metrics not captured yet" }}</dd>
+        <dd>{{ usd_display(market.underlying_volume_24h_usd) or "Metrics not captured yet" }}</dd>
       </div>
       <div>
         <dt>PM Liquidity</dt>
-        <dd>{{ market.total_liquidity_usdc or "0" }}</dd>
+        <dd>{{ usd_display(market.total_liquidity_usdc) or "Liquidity not captured yet" }}</dd>
       </div>
       <div>
         <dt>Series</dt>

@@ -142,7 +142,7 @@
       </article>
       <article class="decision-card">
         <p class="decision-label">Trigger watch</p>
-        <p class="decision-value">{{ market.threshold_price_usd or market.reference_price_usd or "No trigger yet" }}</p>
+        <p class="decision-value">{{ usd_display(market.threshold_price_usd or market.reference_price_usd) or "No trigger yet" }}</p>
         <p class="decision-copy">
           {% if market.drawdown_fraction %}
           Drawdown {{ market.drawdown_fraction }}.
@@ -153,10 +153,10 @@
       </article>
       <article class="decision-card">
         <p class="decision-label">Token tape</p>
-        <p class="decision-value">{{ market.underlying_market_cap_usd or "Market cap pending" }}</p>
+        <p class="decision-value">{{ usd_display(market.underlying_market_cap_usd) or "Market cap pending" }}</p>
         <p class="decision-copy">
           {% if market.underlying_volume_24h_usd %}
-          24h volume {{ market.underlying_volume_24h_usd }}.
+          24h volume {{ usd_display(market.underlying_volume_24h_usd) }}.
           {% else %}
           Volume pending.
           {% endif %}
@@ -164,10 +164,10 @@
       </article>
       <article class="decision-card">
         <p class="decision-label">PM depth</p>
-        <p class="decision-value">{{ market.total_liquidity_usdc or "0" }}</p>
+        <p class="decision-value">{{ usd_display(market.total_liquidity_usdc) or "PM liquidity pending" }}</p>
         <p class="decision-copy">
           {% if market.yes_price_usd and market.no_price_usd %}
-          YES {{ market.yes_price_usd }} / NO {{ market.no_price_usd }}.
+          YES {{ usd_display(market.yes_price_usd) }} / NO {{ usd_display(market.no_price_usd) }}.
           {% else %}
           Prices start after the first seed.
           {% endif %}

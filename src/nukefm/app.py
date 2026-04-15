@@ -14,6 +14,7 @@ from .accounts import AccountStore, AuthenticatedUser
 from .auth import AuthService
 from .catalog import Catalog
 from .config import load_settings
+from .display import format_usd_display
 from .logging_utils import configure_logging
 from .markets import MarketStore, TOKEN_CARD_SORT_OPTIONS
 from .treasury import SolanaTreasury
@@ -21,6 +22,7 @@ from .treasury import SolanaTreasury
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
+TEMPLATES.env.globals["usd_display"] = format_usd_display
 
 
 class ChallengeRequest(BaseModel):

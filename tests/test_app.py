@@ -6,6 +6,7 @@ from nukefm.app import create_app
 from nukefm.bags import BagsToken
 from nukefm.catalog import Catalog
 from nukefm.config import Settings
+from nukefm.database import connect_database
 from nukefm.markets import MarketStore
 from nukefm.treasury import DepositAccountAddresses
 
@@ -91,6 +92,62 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
         credited_at="2026-04-15T12:31:00+00:00",
     )
 
+    with connect_database(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO market_snapshots (
+                market_id,
+                snapshot_hour,
+                reference_price_usd,
+                pair_count,
+                ath_price_usd,
+                ath_timestamp,
+                drawdown_fraction,
+                threshold_price_usd,
+                captured_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                gamma_market_id,
+                "2026-04-15T13:00:00+00:00",
+                "0.000000000123",
+                1,
+                "0.000000000987",
+                "2026-04-15T13:00:00+00:00",
+                "0.75",
+                "0.000000000045",
+                "2026-04-15T13:00:00+00:00",
+            ],
+        )
+        connection.execute(
+            """
+            INSERT INTO token_metrics_snapshots (
+                token_mint,
+                captured_at,
+                pair_count,
+                underlying_volume_h24_usd,
+                underlying_market_cap_usd,
+                source_pair_address,
+                source_dex_id,
+                source_price_usd,
+                source_liquidity_usd
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                "Mint333",
+                "2026-04-15T13:00:00+00:00",
+                1,
+                "0.000000000654",
+                "0.000000000321",
+                "pair-1",
+                "dex-1",
+                "0.000000000123",
+                "1.234567",
+            ],
+        )
+
     app = create_app(settings=settings, catalog=catalog, market_store=market_store)
     client = TestClient(app)
 
@@ -109,6 +166,7 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert 'rel="icon" type="image/svg+xml" href="http://testserver/static/favicon.svg"' in page_response.text
     assert 'option value="market_liquidity" selected' in page_response.text
     assert 'option value="desc" selected' in page_response.text
+    assert "$20" in page_response.text
     assert page_response.text.index("<p class=\"symbol-badge\">ALPHA</p>") < page_response.text.index(
         "<p class=\"symbol-badge\">GAMMA</p>"
     )
@@ -121,9 +179,20 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     assert "OMEGA" in toggle_response.text
     assert "Hide uninitialized" in toggle_response.text
 
+    detail_api_response = client.get("/v1/public/tokens/Mint333")
+    assert detail_api_response.status_code == 200
+    detail_api_market = detail_api_response.json()["current_market"]
+    assert detail_api_market["reference_price_usd"] == "0.000000000123"
+    assert detail_api_market["threshold_price_usd"] == "0.000000000045"
+    assert detail_api_market["underlying_market_cap_usd"] == "0.000000000321"
+
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
     assert "Will GAMMA nuke by 90 days after this market opens?" in detail_response.text
+    assert "$0.000000000123" in detail_response.text
+    assert "$0.000000000321" in detail_response.text
+    assert "Liquidity credit of $5 deepened the pool." in detail_response.text
+    assert "USDC" not in detail_response.text
 
     favicon_response = client.get("/static/favicon.svg")
     assert favicon_response.status_code == 200

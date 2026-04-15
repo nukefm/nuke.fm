@@ -10,6 +10,7 @@ from loguru import logger
 from .amounts import format_usdc_amount
 from .catalog import ACTIVE_MARKET_STATES
 from .database import connect_database, utc_now
+from .display import format_usd_display
 from .settlement import SettlementPriceClient
 from .dexscreener import DexScreenerPair, DexScreenerPairClient
 from .weighted_pool import (
@@ -1431,11 +1432,14 @@ class MarketStore:
         if latest_liquidity is not None:
             if latest_liquidity["source"] == "auto_seed":
                 summary = (
-                    f"Debt-funded weekly auto-seed of {format_usdc_amount(latest_liquidity['amount_atomic'])} USDC "
+                    f"Debt-funded weekly auto-seed of {format_usd_display(format_usdc_amount(latest_liquidity['amount_atomic']))} "
                     "opened or deepened the pool."
                 )
             else:
-                summary = f"Liquidity credit of {format_usdc_amount(latest_liquidity['amount_atomic'])} USDC deepened the pool."
+                summary = (
+                    f"Liquidity credit of {format_usd_display(format_usdc_amount(latest_liquidity['amount_atomic']))} "
+                    "deepened the pool."
+                )
             activity.append(
                 {
                     "timestamp": latest_liquidity["credited_at"],
@@ -1447,7 +1451,7 @@ class MarketStore:
             activity.append(
                 {
                     "timestamp": latest_snapshot["snapshot_hour"],
-                    "summary": f"Latest hourly reference price is {format_decimal(parse_decimal(latest_snapshot['reference_price_usd']))} USDC.",
+                    "summary": f"Latest hourly reference price is {format_usd_display(latest_snapshot['reference_price_usd'])}.",
                 }
             )
         elif current_market["state"] == "awaiting_liquidity":
@@ -1473,7 +1477,7 @@ class MarketStore:
                     "timestamp": latest_trade["created_at"],
                     "summary": (
                         f"Latest trade was a {latest_trade['side']} {latest_trade['outcome'].upper()} "
-                        f"execution for {format_usdc_amount(latest_trade['cash_amount_atomic'])} USDC."
+                        f"execution for {format_usd_display(format_usdc_amount(latest_trade['cash_amount_atomic']))}."
                     ),
                 }
             )

@@ -18,9 +18,15 @@ class Settings:
     database_path: Path
     log_path: Path
     frontend_refresh_seconds: int
+    api_challenge_ttl_seconds: int
     bags_base_url: str
     bags_launch_feed_path: str
     bags_api_key: str | None
+    solana_rpc_url: str
+    solana_usdc_mint: str
+    secret_tool_service: str
+    deposit_master_seed_secret_name: str
+    treasury_seed_secret_name: str
 
 
 def load_settings() -> Settings:
@@ -32,7 +38,13 @@ def load_settings() -> Settings:
         database_path=ROOT_DIR / config["database_path"],
         log_path=ROOT_DIR / config["log_path"],
         frontend_refresh_seconds=config["frontend_refresh_seconds"],
+        api_challenge_ttl_seconds=config["api_challenge_ttl_seconds"],
         bags_base_url=config["bags_base_url"].rstrip("/"),
         bags_launch_feed_path=config["bags_launch_feed_path"],
         bags_api_key=os.getenv("BAGS_API_KEY") or None,
+        solana_rpc_url=config["solana_rpc_url"],
+        solana_usdc_mint=config["solana_usdc_mint"],
+        secret_tool_service=config["secret_tool_service"],
+        deposit_master_seed_secret_name=config["deposit_master_seed_secret_name"],
+        treasury_seed_secret_name=config["treasury_seed_secret_name"],
     )

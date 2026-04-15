@@ -1,20 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
-from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 
 from .bags import BagsToken
+from .database import connect_database, utc_now
 
 
 ACTIVE_MARKET_STATES = {"awaiting_liquidity", "open", "halted"}
-
-
-def utc_now() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat()
-
 
 def market_question(symbol: str) -> str:
     return f"Will {symbol} nuke by 90 days after this market opens?"
@@ -29,8 +22,7 @@ class Catalog:
         self._database_path = database_path
 
     def initialize(self) -> None:
-        self._database_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as connection:
+        with connect_database(self._database_path) as connection:
             connection.executescript(
                 """
                 PRAGMA foreign_keys = ON;
@@ -65,7 +57,7 @@ class Catalog:
 
     def ingest_tokens(self, tokens: list[BagsToken]) -> int:
         ingested_count = 0
-        with self._connect() as connection:
+        with connect_database(self._database_path) as connection:
             for token in tokens:
                 self._upsert_token(connection, token)
                 self._ensure_current_market(connection, token)
@@ -73,7 +65,7 @@ class Catalog:
         return ingested_count
 
     def list_token_cards(self) -> list[dict]:
-        with self._connect() as connection:
+        with connect_database(self._database_path) as connection:
             rows = connection.execute(
                 """
                 SELECT
@@ -109,7 +101,7 @@ class Catalog:
         return [self._serialize_token_card(row) for row in rows]
 
     def get_token_detail(self, mint: str) -> dict | None:
-        with self._connect() as connection:
+        with connect_database(self._database_path) as connection:
             token_row = connection.execute(
                 """
                 SELECT mint, symbol, name, image_url, launched_at, creator, created_at, updated_at
@@ -163,7 +155,7 @@ class Catalog:
             raise ValueError(f"Invalid resolved market state: {outcome_state}")
 
         resolved_timestamp = resolved_at or utc_now()
-        with self._connect() as connection:
+        with connect_database(self._database_path) as connection:
             market = connection.execute(
                 "SELECT * FROM markets WHERE id = ?",
                 [market_id],
@@ -318,13 +310,3 @@ class Catalog:
                 }
             )
         return activity
-
-    @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self._database_path)
-        connection.row_factory = sqlite3.Row
-        try:
-            yield connection
-            connection.commit()
-        finally:
-            connection.close()

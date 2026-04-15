@@ -2,8 +2,9 @@
 
 ## Prediction Market MVP
 
-- The recommended v1 market asks whether a Bags token will be rugged within 90 days of launch.
-- The recommended settlement rule defines `rugged` as a drawdown of more than 95% from post-launch ATH within 90 days, measured from hourly liquidity-weighted price snapshots across tracked Solana pairs.
-- The product is specified as custodial for the MVP, with Solana USDC deposits and withdrawals onchain and all trading, pricing, and settlement on an internal ledger.
-- The recommended trading model is a platform-run binary market maker instead of a user order book because one market per token creates a long tail of thin markets.
-- The spec was intentionally rewritten to remove arbitrary product constraints such as position caps, cooldowns, and fixed treasury rules so review stays focused on the core market design and MVP flows.
+- The public market term is `nuke`, not `rug`.
+- Each token has a rolling market series. When a market resolves, the next market is created immediately in `awaiting_liquidity`.
+- Each market tracks its own ATH from its own funding time. Earlier market outcomes do not affect later ATH tracking.
+- The trading model is an offchain backend-only XYK AMM between `YES` and `NO`, with displayed USDC prices derived from AMM reserves.
+- The frontend is read-only. Trading, balances, positions, deposits, and withdrawals are API-only.
+- Market liquidity deposits are one-way USDC deposits into a market-specific address. They do not mint LP shares, cannot be withdrawn, and any remaining liquidity after settlement is swept to the platform as revenue.

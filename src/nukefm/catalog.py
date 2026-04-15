@@ -20,6 +20,10 @@ def market_question(symbol: str) -> str:
     return f"Will {symbol} nuke by 90 days after this market opens?"
 
 
+def display_market_state(state: str) -> str:
+    return state.replace("_", " ")
+
+
 class Catalog:
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
@@ -303,7 +307,7 @@ class Catalog:
         activity = [
             {
                 "timestamp": current_market["created_at"],
-                "summary": f"Series {current_market['sequence_number']} created in {current_market['state']}.",
+                "summary": f"Series {current_market['sequence_number']} created in {display_market_state(current_market['state'])}.",
             }
         ]
         if current_market["state"] == "awaiting_liquidity":

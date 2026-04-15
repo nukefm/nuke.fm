@@ -7,10 +7,21 @@
     <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}">
   </head>
   <body>
+    <div class="page-backdrop" aria-hidden="true">
+      <div class="backdrop-orb orb-a"></div>
+      <div class="backdrop-orb orb-b"></div>
+      <div class="backdrop-grid"></div>
+    </div>
     <div class="page-shell">
       <header class="site-header">
-        <a class="brand" href="/">nuke.fm</a>
-        <p class="tagline">Read-only market catalog for rolling Bags nuke markets.</p>
+        <div class="brand-block">
+          <a class="brand" href="/">nuke.fm</a>
+          <p class="tagline">Rolling Bags nuke markets, published as a read-only board.</p>
+        </div>
+        <div class="site-status">
+          <span class="meta-pill">Read-only frontend</span>
+          <p class="meta-note">Trading and account flows stay in the API.</p>
+        </div>
       </header>
       <main>
         {% block content %}{% endblock %}

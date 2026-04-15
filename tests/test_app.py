@@ -51,7 +51,7 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
 
         page_response = client.get("/")
         assert page_response.status_code == 200
-        assert "Rolling token markets without a trading UI" in page_response.text
+        assert "Read the market board. Trade somewhere else." in page_response.text
 
         detail_response = client.get("/tokens/Mint333")
         assert detail_response.status_code == 200

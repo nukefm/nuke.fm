@@ -1,27 +1,51 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="hero token-hero">
-  <div>
+<section class="detail-hero">
+  <div class="detail-heading">
+    <a class="back-link" href="/">← Back to market board</a>
     <p class="eyebrow">{{ token.symbol }}</p>
     <h1>{{ token.name }}</h1>
-    <p class="mint">{{ token.mint }}</p>
+    <p class="headline-question">{{ token.current_market.question }}</p>
+    <p class="market-mint full-mint">
+      <span>Mint</span>
+      <code>{{ token.mint }}</code>
+    </p>
   </div>
-  <span class="pill state-{{ token.current_market.state }}">{{ token.current_market.state }}</span>
+  <aside class="hero-panel compact-panel">
+    <div class="hero-panel-header">
+      <p class="panel-kicker">Current Series</p>
+      <p class="panel-caption">Latest forward market for this token</p>
+    </div>
+    <div class="detail-state-wrap">
+      <span class="state-pill state-{{ token.current_market.state }}">
+        {{ token.current_market.state|replace("_", " ") }}
+      </span>
+    </div>
+    <dl class="hero-stats compact-stats">
+      <div>
+        <dt>Series</dt>
+        <dd>{{ token.current_market.sequence_number }}</dd>
+      </div>
+      <div>
+        <dt>Launch Feed</dt>
+        <dd>{{ token.launched_at or "Unavailable" }}</dd>
+      </div>
+    </dl>
+  </aside>
 </section>
 
 <section class="detail-layout">
   <article class="detail-card">
     <h2>Current Market</h2>
-    <p class="question">{{ token.current_market.question }}</p>
-    <dl class="stats">
+    <dl class="metric-grid">
       <div>
         <dt>Series</dt>
         <dd>{{ token.current_market.sequence_number }}</dd>
       </div>
       <div>
         <dt>State</dt>
-        <dd>{{ token.current_market.state }}</dd>
+        <dd>{{ token.current_market.state|replace("_", " ") }}</dd>
       </div>
       <div>
         <dt>Market Start</dt>
@@ -43,8 +67,10 @@
     <ul class="activity-list">
       {% for activity in token.recent_activity %}
       <li>
-        <span>{{ activity.summary }}</span>
-        <time>{{ activity.timestamp }}</time>
+        <div>
+          <p>{{ activity.summary }}</p>
+          <time>{{ activity.timestamp }}</time>
+        </div>
       </li>
       {% endfor %}
     </ul>
@@ -57,8 +83,10 @@
   <ul class="activity-list">
     {% for market in token.past_markets %}
     <li>
-      <span>Series {{ market.sequence_number }} resolved as {{ market.state }}</span>
-      <time>{{ market.resolved_at }}</time>
+      <div>
+        <p>Series {{ market.sequence_number }} resolved as {{ market.state|replace("_", " ") }}</p>
+        <time>{{ market.resolved_at }}</time>
+      </div>
     </li>
     {% endfor %}
   </ul>

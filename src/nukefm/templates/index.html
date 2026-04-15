@@ -48,7 +48,7 @@
   </aside>
 </section>
 
-{% if tokens %}
+{% if total_token_count > 0 %}
 <section class="section-heading">
   <div>
     <p class="eyebrow">Current Markets</p>
@@ -90,7 +90,9 @@
     </p>
   </div>
 </section>
+{% endif %}
 
+{% if tokens %}
 <section class="market-grid">
   {% for token in tokens %}
   {% set market = token.current_market %}

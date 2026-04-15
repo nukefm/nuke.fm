@@ -123,3 +123,51 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
     assert "Will GAMMA nuke by 90 days after this market opens?" in detail_response.text
+
+
+def test_board_toggle_stays_visible_when_all_markets_are_uninitialized(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    log_path = tmp_path / "logs" / "app.log"
+    settings = Settings(
+        app_name="nuke.fm",
+        database_path=database_path,
+        log_path=log_path,
+        frontend_refresh_seconds=30,
+        api_challenge_ttl_seconds=300,
+        market_duration_days=90,
+        market_threshold_fraction="0.05",
+        bags_base_url="https://public-api-v2.bags.fm/api/v1",
+        bags_launch_feed_path="/token-launch/feed",
+        bags_api_key=None,
+        dexscreener_base_url="https://api.dexscreener.com",
+        solana_rpc_url="https://api.mainnet-beta.solana.com",
+        solana_usdc_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        secret_tool_service="nuke.fm",
+        deposit_master_seed_secret_name="deposit-master-seed",
+        treasury_seed_secret_name="treasury-seed",
+    )
+
+    catalog = Catalog(database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint="Mint777",
+                name="Seven",
+                symbol="SEVEN",
+                image_url=None,
+                launched_at="2026-04-17T12:00:00+00:00",
+                creator=None,
+            )
+        ]
+    )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+    app = create_app(settings=settings, catalog=catalog, market_store=market_store)
+    client = TestClient(app)
+
+    page_response = client.get("/")
+    assert page_response.status_code == 200
+    assert "No initialized markets in view" in page_response.text
+    assert "Show uninitialized" in page_response.text

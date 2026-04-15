@@ -8,6 +8,7 @@ getcontext().prec = 50
 
 ONE = Decimal("1")
 PRICE_QUANTUM = Decimal("0.000001")
+TINY_PRICE_QUANTUM = Decimal("0.000000000001")
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,9 @@ def parse_decimal(value: str | int | float | Decimal) -> Decimal:
 
 
 def format_decimal(value: Decimal, quantum: Decimal = PRICE_QUANTUM) -> str:
+    if value != 0 and abs(value) < quantum:
+        normalized = value.quantize(TINY_PRICE_QUANTUM)
+        return format(normalized.normalize(), "f")
     normalized = value.quantize(quantum)
     return format(normalized.normalize(), "f")
 

@@ -843,6 +843,10 @@ dt {
     grid-template-columns: 1fr;
   }
 
+  .summary-grid {
+    display: none;
+  }
+
   .market-brief-grid {
     grid-template-columns: 1fr;
   }

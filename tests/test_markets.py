@@ -55,6 +55,19 @@ class FakeDexScreenerClient:
         return self._pairs_by_mint.get(token_mint, [])
 
 
+class SelectiveSettlementPriceClient:
+    def __init__(self, prices_by_mint: dict[str, Decimal], missing_mints: set[str]) -> None:
+        self._prices_by_mint = prices_by_mint
+        self._missing_mints = missing_mints
+        self.calls: list[str] = []
+
+    def get_rolling_median_price(self, token_mint: str, *, start_at: str, end_at: str) -> Decimal:
+        self.calls.append(token_mint)
+        if token_mint in self._missing_mints:
+            raise ValueError(f"No settlement prices returned for {token_mint}.")
+        return self._prices_by_mint[token_mint]
+
+
 def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     catalog = Catalog(database_path)
@@ -272,6 +285,67 @@ def test_snapshot_captures_first_market_hour_immediately(tmp_path: Path) -> None
             "0.075",
         )
     ]
+
+
+def test_snapshot_skips_only_markets_missing_price_data(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    catalog = Catalog(database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(mint="MintGood", name="Good", symbol="GOOD", image_url=None, launched_at=None, creator=None),
+            BagsToken(mint="MintMissing", name="Missing", symbol="MISS", image_url=None, launched_at=None, creator=None),
+        ]
+    )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+    treasury = FakeTreasury()
+    market_store.ensure_missing_market_liquidity_accounts(treasury)
+
+    good_market_id = market_store.get_token_detail("MintGood")["current_market"]["id"]
+    missing_market_id = market_store.get_token_detail("MintMissing")["current_market"]["id"]
+    market_store.record_market_liquidity_credit(
+        market_id=good_market_id,
+        amount_atomic=1_000_000,
+        observed_balance_after_atomic=1_000_000,
+        credited_at="2026-04-15T10:00:00+00:00",
+    )
+    market_store.record_market_liquidity_credit(
+        market_id=missing_market_id,
+        amount_atomic=1_000_000,
+        observed_balance_after_atomic=1_000_000,
+        credited_at="2026-04-15T10:05:00+00:00",
+    )
+
+    captured = market_store.capture_hourly_snapshots(
+        SelectiveSettlementPriceClient(
+            prices_by_mint={"MintGood": Decimal("2")},
+            missing_mints={"MintMissing"},
+        ),
+        captured_at="2026-04-15T11:00:00+00:00",
+    )
+
+    assert captured == [
+        {
+            "market_id": good_market_id,
+            "state": "open",
+            "reference_price_usd": "2",
+            "ath_price_usd": "2",
+            "threshold_price_usd": "0.1",
+        }
+    ]
+
+    with connect_database(database_path) as connection:
+        snapshot_rows = connection.execute(
+            """
+            SELECT market_id, reference_price_usd
+            FROM market_snapshots
+            ORDER BY market_id ASC
+            """
+        ).fetchall()
+
+    assert [tuple(row) for row in snapshot_rows] == [(good_market_id, "2")]
 
 
 def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:

@@ -5,6 +5,8 @@ from decimal import Decimal
 from pathlib import Path
 import sqlite3
 
+from loguru import logger
+
 from .amounts import format_usdc_amount
 from .catalog import ACTIVE_MARKET_STATES
 from .database import connect_database, utc_now
@@ -846,11 +848,20 @@ class MarketStore:
                     continue
                 snapshot_hour = self._snapshot_bucket_start(market_start_time, captured_time).isoformat()
                 window_start_time = max(market_start_time, captured_time - timedelta(hours=24))
-                reference_price = price_client.get_rolling_median_price(
-                    market_row["token_mint"],
-                    start_at=window_start_time.isoformat(),
-                    end_at=captured_timestamp,
-                )
+                try:
+                    reference_price = price_client.get_rolling_median_price(
+                        market_row["token_mint"],
+                        start_at=window_start_time.isoformat(),
+                        end_at=captured_timestamp,
+                    )
+                except ValueError as error:
+                    logger.warning(
+                        "Skipping snapshot for market {} ({}) because settlement prices are unavailable: {}",
+                        market_row["id"],
+                        market_row["token_mint"],
+                        error,
+                    )
+                    continue
                 latest_snapshot = self._latest_snapshot_row(connection, market_row["id"])
                 ath_price = reference_price
                 ath_timestamp = captured_timestamp

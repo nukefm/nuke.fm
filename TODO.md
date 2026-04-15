@@ -1,4 +1,4 @@
-- complete: ensure resolution is resistant to manipulation of underlying using a rolling 24hr median price
 - deferred: calibrate period and drawdown % from historical data
-- auto-seed $1 of liquidity into top 100 mkts
-- allow mkts to be sorted by liquidity, dump %, underlying volume and underlying mktcap (both sorted up and down)
+- create trading bot
+- ensure liquidity value + volume is displayed on ui
+- also show price chart of both prediction market and token in ui on token page

@@ -99,7 +99,7 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
         market_id=market_id,
         amount_atomic=20_000_000,
         observed_balance_after_atomic=20_000_000,
-        credited_at="2026-04-14T13:30:00+00:00",
+        credited_at="2026-04-15T13:30:00+00:00",
     )
 
     with connect_database(database_path) as connection:
@@ -136,14 +136,14 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
         ]
     )
 
-    market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T13:00:00+00:00")
     market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T14:00:00+00:00")
     market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T15:00:00+00:00")
+    market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T16:00:00+00:00")
 
     assert price_client.calls == [
         {
             "token_mint": "Mint555",
-            "start_at": "2026-04-14T13:30:00+00:00",
+            "start_at": "2026-04-14T13:00:00+00:00",
             "end_at": "2026-04-15T13:00:00+00:00",
         },
         {
@@ -180,15 +180,15 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
         )
         for row in snapshot_rows
     ] == [
-        ("2026-04-15T12:30:00+00:00", "2026-04-15T13:00:00+00:00", "10", "10", "0", "0.50"),
-        ("2026-04-15T13:30:00+00:00", "2026-04-15T14:00:00+00:00", "0.4", "10", "0.96", "0.50"),
-        ("2026-04-15T14:30:00+00:00", "2026-04-15T15:00:00+00:00", "0.8", "10", "0.92", "0.50"),
+        ("2026-04-15T13:00:00+00:00", "2026-04-15T14:00:00+00:00", "10", "10", "0", "0.50"),
+        ("2026-04-15T14:00:00+00:00", "2026-04-15T15:00:00+00:00", "0.4", "10", "0.96", "0.50"),
+        ("2026-04-15T15:00:00+00:00", "2026-04-15T16:00:00+00:00", "0.8", "10", "0.92", "0.50"),
     ]
 
     resolved = market_store.resolve_markets(
         catalog=catalog,
         treasury=treasury,
-        resolved_at="2026-04-15T15:05:00+00:00",
+        resolved_at="2026-04-15T16:05:00+00:00",
     )
 
     assert resolved == [{"market_id": market_id, "state": "resolved_yes", "resolved_at": "2026-04-15T14:00:00+00:00"}]
@@ -202,7 +202,7 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     assert account_store.get_available_balance_atomic(user["id"]) > 30_000_000
 
 
-def test_snapshot_captures_first_market_hour_immediately(tmp_path: Path) -> None:
+def test_snapshot_uses_last_closed_wall_clock_hour_before_market_start(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     catalog = Catalog(database_path)
     catalog.initialize()
@@ -233,7 +233,7 @@ def test_snapshot_captures_first_market_hour_immediately(tmp_path: Path) -> None
 
     price_client = FakeSettlementPriceClient([Decimal("1"), Decimal("1.5")])
     captured = market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T16:34:30+00:00")
-    updated = market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T16:50:00+00:00")
+    updated = market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T17:05:00+00:00")
 
     assert captured == [
         {
@@ -256,13 +256,13 @@ def test_snapshot_captures_first_market_hour_immediately(tmp_path: Path) -> None
     assert price_client.calls == [
         {
             "token_mint": "MintFresh",
-            "start_at": "2026-04-15T16:34:04+00:00",
-            "end_at": "2026-04-15T16:34:30+00:00",
+            "start_at": "2026-04-14T16:00:00+00:00",
+            "end_at": "2026-04-15T16:00:00+00:00",
         },
         {
             "token_mint": "MintFresh",
-            "start_at": "2026-04-15T16:34:04+00:00",
-            "end_at": "2026-04-15T16:50:00+00:00",
+            "start_at": "2026-04-14T17:00:00+00:00",
+            "end_at": "2026-04-15T17:00:00+00:00",
         },
     ]
 
@@ -278,8 +278,15 @@ def test_snapshot_captures_first_market_hour_immediately(tmp_path: Path) -> None
 
     assert [tuple(row) for row in snapshot_rows] == [
         (
-            "2026-04-15T16:34:04+00:00",
-            "2026-04-15T16:50:00+00:00",
+            "2026-04-15T16:00:00+00:00",
+            "2026-04-15T16:34:30+00:00",
+            "1",
+            "1",
+            "0.05",
+        ),
+        (
+            "2026-04-15T17:00:00+00:00",
+            "2026-04-15T17:05:00+00:00",
             "1.5",
             "1.5",
             "0.075",

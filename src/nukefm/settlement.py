@@ -38,7 +38,25 @@ class JupiterChartsSettlementPriceClient(SettlementPriceClient):
         end_time = datetime.fromisoformat(end_at)
         duration_seconds = max((end_time - start_time).total_seconds(), 0)
         candle_count = max(1, math.ceil(duration_seconds / FIFTEEN_MINUTE_SECONDS))
+        payload = self._fetch_candles(token_mint, end_time=end_time, candle_count=candle_count)
 
+        candle_prices: list[Decimal] = []
+        for candle in payload.get("candles") or []:
+            candle_time = datetime.fromtimestamp(candle["time"], tz=end_time.tzinfo)
+            if candle_time < start_time or candle_time > end_time:
+                continue
+            candle_prices.append(Decimal(str(candle["close"])))
+
+        if candle_prices:
+            return self._median_decimal(candle_prices)
+
+        last_known_price = self._last_known_price(token_mint, end_time=end_time)
+        if last_known_price is not None:
+            return last_known_price
+
+        raise ValueError(f"No settlement prices returned for {token_mint} between {start_at} and {end_at}.")
+
+    def _fetch_candles(self, token_mint: str, *, end_time: datetime, candle_count: int) -> dict:
         response = self._session.get(
             f"{self._base_url}/{token_mint}",
             params={
@@ -51,19 +69,14 @@ class JupiterChartsSettlementPriceClient(SettlementPriceClient):
             timeout=30,
         )
         response.raise_for_status()
-        payload = response.json()
+        return response.json()
 
-        candle_prices: list[Decimal] = []
-        for candle in payload.get("candles") or []:
-            candle_time = datetime.fromtimestamp(candle["time"], tz=end_time.tzinfo)
-            if candle_time < start_time or candle_time > end_time:
-                continue
-            candle_prices.append(Decimal(str(candle["close"])))
-
-        if not candle_prices:
-            raise ValueError(f"No settlement prices returned for {token_mint} between {start_at} and {end_at}.")
-
-        return self._median_decimal(candle_prices)
+    def _last_known_price(self, token_mint: str, *, end_time: datetime) -> Decimal | None:
+        payload = self._fetch_candles(token_mint, end_time=end_time, candle_count=1)
+        candles = payload.get("candles") or []
+        if not candles:
+            return None
+        return Decimal(str(candles[-1]["close"]))
 
     @staticmethod
     def _median_decimal(values: list[Decimal]) -> Decimal:

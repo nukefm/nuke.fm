@@ -65,5 +65,6 @@
 ## Live Data Dependencies
 
 - Settlement snapshots now use Jupiter 15-minute USD price candles instead of Bitquery. That removes billing as an operational dependency and keeps the snapshot job aligned with the same market-data family already used for token metrics.
-- Settlement snapshots are keyed to market-relative hour buckets, not wall-clock hours. The first bucket starts exactly at `market_start`, so a newly funded market can publish a live hour-0 signal immediately and then keep updating that same bucket until its first full hour elapses.
+- Settlement snapshots use finalized wall-clock hours. The first snapshot for a newly funded market is the hour ending at `floor(market_start)`, so a market opened mid-hour gets an immediate pre-open baseline instead of waiting for the next top-of-hour bucket.
+- Jupiter charts do not currently emit empty carry-forward candles for quiet periods. When a finalized hour has no candles in-range, the snapshot layer explicitly carries forward the last known price at or before that hour end.
 - Market-liquidity account creation is now retried on Solana RPC `429` responses, and the bulk account-creation path prioritizes already-open markets first so the frontend-visible seeded markets recover before the long tail of awaiting-liquidity markets.

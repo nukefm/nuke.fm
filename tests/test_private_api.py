@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from nacl.signing import SigningKey
 
 from nukefm.accounts import AccountStore
-from nukefm.amounts import parse_usdc_amount
+from nukefm.amounts import format_usdc_amount, parse_usdc_amount
 from nukefm.app import create_app
 from nukefm.bags import BagsToken
 from nukefm.catalog import Catalog
@@ -222,18 +222,21 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     sell_quote_response = client.post(
         "/v1/private/trades/quote",
         headers=headers,
-        json={"market_id": market_id, "outcome": "yes", "side": "sell", "amount_usdc": "1"},
+        json={"market_id": market_id, "outcome": "yes", "side": "sell", "share_amount": "1"},
     )
     assert sell_quote_response.status_code == 200
-    assert sell_quote_response.json()["share_amount"] != "0"
+    assert sell_quote_response.json()["amount_usdc"] != "0"
+    assert sell_quote_response.json()["requested_share_amount"] == "1"
 
     sell_trade_response = client.post(
         "/v1/private/trades",
         headers=headers,
-        json={"market_id": market_id, "outcome": "yes", "side": "sell", "amount_usdc": "1"},
+        json={"market_id": market_id, "outcome": "yes", "side": "sell", "share_amount": "1"},
     )
     assert sell_trade_response.status_code == 200
-    assert sell_trade_response.json()["amount_usdc"] == "1"
+    assert sell_trade_response.json()["amount_usdc"] != "0"
+    assert sell_trade_response.json()["requested_share_amount"] == "1"
+    realized_sell_amount_usdc = sell_trade_response.json()["amount_usdc"]
 
     trades_response = client.get("/v1/private/account/trades", headers=headers)
     assert trades_response.status_code == 200
@@ -252,7 +255,13 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     assert withdrawal_response.json()["amount_usdc"] == "2.25"
 
     held_balance_response = client.get("/v1/private/account", headers=headers)
-    assert held_balance_response.json()["account_balance_usdc"] == "8.25"
+    expected_held_balance = format_usdc_amount(
+        parse_usdc_amount("12.5")
+        - parse_usdc_amount("3")
+        + parse_usdc_amount(realized_sell_amount_usdc)
+        - parse_usdc_amount("2.25")
+    )
+    assert held_balance_response.json()["account_balance_usdc"] == expected_held_balance
     assert held_balance_response.json()["pending_withdrawal_usdc"] == "2.25"
 
     processed = treasury.process_withdrawals(account_store, limit=10)
@@ -263,7 +272,7 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     assert withdrawals_response.json()["withdrawals"][0]["state"] == "completed"
 
     settled_account_response = client.get("/v1/private/account", headers=headers)
-    assert settled_account_response.json()["account_balance_usdc"] == "8.25"
+    assert settled_account_response.json()["account_balance_usdc"] == expected_held_balance
     assert settled_account_response.json()["pending_withdrawal_usdc"] == "0"
 
     portfolio_response = client.get("/v1/private/account/portfolio", headers=headers)

@@ -32,6 +32,6 @@
 ## Weighted AMM And Settlement
 
 - The weighted pool still uses Balancer-style weights as exponents. The MVP divergence is that liquidity deposits retune those exponent weights after equal YES/NO inventory is added so the displayed YES/NO price stays unchanged at deposit time.
-- The sell API is intentionally shaped around a requested USDC amount out rather than a requested share amount. That avoids ambiguous residual opposite-side inventory when complete-set redemption and integer token accounting meet weighted-pool math.
+- The sell API takes a requested share amount. The backend binary-searches the largest exact USDC redemption whose required share burn fits inside that request, and reports any tiny unfilled same-side remainder explicitly instead of creating hidden opposite-side dust.
 - Market liquidity accounts are derived from the same master seed as user deposit accounts, but the HMAC input is domain-separated as `market:{market_id}` instead of `user:{user_id}`.
 - Revenue sweep is split into two layers on purpose: the database records the full remaining internal market backing as platform revenue, while the on-chain sweep only moves the resolved market's dedicated USDC deposit account back to treasury because user trading stays offchain inside the shared treasury balance.

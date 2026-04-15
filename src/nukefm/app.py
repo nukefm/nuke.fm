@@ -42,7 +42,28 @@ class TradeRequest(BaseModel):
     market_id: int
     outcome: str
     side: str
-    amount_usdc: str
+    amount_usdc: str | None = None
+    share_amount: str | None = None
+
+
+def _trade_atomic_amount(body: TradeRequest) -> int:
+    from .amounts import parse_usdc_amount
+
+    if body.side == "buy":
+        if body.amount_usdc is None:
+            raise ValueError("Buy trades require amount_usdc.")
+        if body.share_amount is not None:
+            raise ValueError("Buy trades do not accept share_amount.")
+        return parse_usdc_amount(body.amount_usdc)
+
+    if body.side == "sell":
+        if body.share_amount is None:
+            raise ValueError("Sell trades require share_amount.")
+        if body.amount_usdc is not None:
+            raise ValueError("Sell trades do not accept amount_usdc.")
+        return parse_usdc_amount(body.share_amount)
+
+    raise ValueError("Side must be 'buy' or 'sell'.")
 
 
 def _extract_api_key(
@@ -233,14 +254,12 @@ def create_app(
         body: TradeRequest,
         user: Annotated[AuthenticatedUser, Depends(_require_authenticated_user)],
     ) -> dict:
-        from .amounts import parse_usdc_amount
-
         try:
             return market_store.quote_trade(
                 market_id=body.market_id,
                 outcome=body.outcome,
                 side=body.side,
-                amount_atomic=parse_usdc_amount(body.amount_usdc),
+                amount_atomic=_trade_atomic_amount(body),
             )
         except (LookupError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
@@ -250,15 +269,13 @@ def create_app(
         body: TradeRequest,
         user: Annotated[AuthenticatedUser, Depends(_require_authenticated_user)],
     ) -> dict:
-        from .amounts import parse_usdc_amount
-
         try:
             return market_store.execute_trade(
                 user_id=user.user_id,
                 market_id=body.market_id,
                 outcome=body.outcome,
                 side=body.side,
-                amount_atomic=parse_usdc_amount(body.amount_usdc),
+                amount_atomic=_trade_atomic_amount(body),
             )
         except (LookupError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error

@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 from .amounts import format_usdc_amount
-from .catalog import ACTIVE_MARKET_STATES, market_question
+from .catalog import ACTIVE_MARKET_STATES
 from .database import connect_database, utc_now
 from .weighted_pool import (
     ONE,
@@ -238,12 +238,12 @@ class MarketStore:
                 )
                 self._adjust_position(connection, user_id, market_id, outcome, quote["share_amount_atomic"])
             else:
-                self._require_position(connection, user_id, market_id, outcome, quote["share_amount_atomic"])
+                self._require_position(connection, user_id, market_id, outcome, amount_atomic)
                 ledger_entry_id = self._insert_ledger_entry(
                     connection,
                     user_id=user_id,
                     entry_type=f"market_sell_{outcome}",
-                    amount_atomic=amount_atomic,
+                    amount_atomic=quote["cash_amount_atomic"],
                     reference_type="market_trade",
                     reference_id="pending",
                     note=f"Sold {outcome.upper()} exposure in market {market_id}.",
@@ -277,7 +277,7 @@ class MarketStore:
                     market_id,
                     outcome,
                     side,
-                    amount_atomic,
+                    quote["cash_amount_atomic"],
                     quote["share_amount_atomic"],
                     quote["before_yes_price_usd"],
                     quote["before_no_price_usd"],
@@ -955,9 +955,17 @@ class MarketStore:
         before_no_price = no_price(pool)
 
         if side == "buy":
-            share_amount_atomic, pool_after = self._quote_buy(pool, outcome, amount_atomic)
+            cash_amount_atomic = amount_atomic
+            share_amount_atomic, pool_after = self._quote_buy(pool, outcome, cash_amount_atomic)
         else:
-            share_amount_atomic, pool_after = self._quote_sell(pool, outcome, amount_atomic)
+            requested_share_amount_atomic = amount_atomic
+            cash_amount_atomic, share_amount_atomic, pool_after = self._quote_sell(
+                pool,
+                outcome,
+                requested_share_amount_atomic,
+            )
+            if share_amount_atomic == 0:
+                raise ValueError("Sell amount is too small to produce any USDC output.")
 
         return {
             "market_id": market_row["id"],
@@ -965,10 +973,13 @@ class MarketStore:
             "symbol": market_row["symbol"],
             "outcome": outcome,
             "side": side,
-            "amount_usdc": format_usdc_amount(amount_atomic),
+            "amount_usdc": format_usdc_amount(cash_amount_atomic),
             "share_amount": format_usdc_amount(share_amount_atomic),
+            "cash_amount_atomic": cash_amount_atomic,
             "share_amount_atomic": share_amount_atomic,
-            "average_price_usdc": format_decimal(Decimal(amount_atomic) / Decimal(share_amount_atomic)),
+            "average_price_usdc": format_decimal(Decimal(cash_amount_atomic) / Decimal(share_amount_atomic)),
+            "requested_share_amount": None if side == "buy" else format_usdc_amount(requested_share_amount_atomic),
+            "unfilled_share_amount": None if side == "buy" else format_usdc_amount(requested_share_amount_atomic - share_amount_atomic),
             "before_yes_price_usd": format_decimal(before_yes_price),
             "before_no_price_usd": format_decimal(before_no_price),
             "after_yes_price_usd": format_decimal(yes_price(pool_after)),
@@ -1015,46 +1026,82 @@ class MarketStore:
         )
 
     @staticmethod
-    def _quote_sell(pool: WeightedPoolState, outcome: str, amount_atomic: int) -> tuple[int, WeightedPoolState]:
-        if amount_atomic > pool.cash_backing_atomic:
-            raise ValueError("Sell amount exceeds available market cash backing.")
+    def _quote_sell(
+        pool: WeightedPoolState,
+        outcome: str,
+        requested_share_amount_atomic: int,
+    ) -> tuple[int, int, WeightedPoolState]:
+        cash_amount_atomic, share_amount_atomic = MarketStore._max_cash_out_for_share_sell(
+            pool,
+            outcome,
+            requested_share_amount_atomic,
+        )
+        swap_input_atomic = share_amount_atomic - cash_amount_atomic
 
-        # Selling for cash redeems complete sets. The user spends cash_amount of the outcome
-        # directly on redemption and spends the rest to buy the opposite leg from the pool.
         if outcome == "yes":
-            swap_input_atomic = amount_in_given_out(
-                reserve_in_atomic=pool.yes_reserve_atomic,
-                reserve_out_atomic=pool.no_reserve_atomic,
-                weight_in=pool.yes_weight,
-                weight_out=pool.no_weight,
-                amount_out_atomic=amount_atomic,
-            )
-            share_amount_atomic = amount_atomic + swap_input_atomic
-            return share_amount_atomic, WeightedPoolState(
+            return cash_amount_atomic, share_amount_atomic, WeightedPoolState(
                 yes_reserve_atomic=pool.yes_reserve_atomic + swap_input_atomic,
-                no_reserve_atomic=pool.no_reserve_atomic - amount_atomic,
+                no_reserve_atomic=pool.no_reserve_atomic - cash_amount_atomic,
                 yes_weight=pool.yes_weight,
                 no_weight=pool.no_weight,
-                cash_backing_atomic=pool.cash_backing_atomic - amount_atomic,
+                cash_backing_atomic=pool.cash_backing_atomic - cash_amount_atomic,
                 total_liquidity_atomic=pool.total_liquidity_atomic,
             )
 
-        swap_input_atomic = amount_in_given_out(
-            reserve_in_atomic=pool.no_reserve_atomic,
-            reserve_out_atomic=pool.yes_reserve_atomic,
-            weight_in=pool.no_weight,
-            weight_out=pool.yes_weight,
-            amount_out_atomic=amount_atomic,
-        )
-        share_amount_atomic = amount_atomic + swap_input_atomic
-        return share_amount_atomic, WeightedPoolState(
-            yes_reserve_atomic=pool.yes_reserve_atomic - amount_atomic,
+        return cash_amount_atomic, share_amount_atomic, WeightedPoolState(
+            yes_reserve_atomic=pool.yes_reserve_atomic - cash_amount_atomic,
             no_reserve_atomic=pool.no_reserve_atomic + swap_input_atomic,
             yes_weight=pool.yes_weight,
             no_weight=pool.no_weight,
-            cash_backing_atomic=pool.cash_backing_atomic - amount_atomic,
+            cash_backing_atomic=pool.cash_backing_atomic - cash_amount_atomic,
             total_liquidity_atomic=pool.total_liquidity_atomic,
         )
+
+    @staticmethod
+    def _max_cash_out_for_share_sell(
+        pool: WeightedPoolState,
+        outcome: str,
+        requested_share_amount_atomic: int,
+    ) -> tuple[int, int]:
+        if requested_share_amount_atomic > pool.cash_backing_atomic:
+            upper_bound = pool.cash_backing_atomic
+        else:
+            upper_bound = requested_share_amount_atomic
+
+        low_cash_out = 0
+        high_cash_out = upper_bound
+        best_cash_out = 0
+        best_share_amount = 0
+
+        while low_cash_out <= high_cash_out:
+            candidate_cash_out = (low_cash_out + high_cash_out) // 2
+            if candidate_cash_out == 0:
+                required_share_amount = 0
+            elif outcome == "yes":
+                required_share_amount = candidate_cash_out + amount_in_given_out(
+                    reserve_in_atomic=pool.yes_reserve_atomic,
+                    reserve_out_atomic=pool.no_reserve_atomic,
+                    weight_in=pool.yes_weight,
+                    weight_out=pool.no_weight,
+                    amount_out_atomic=candidate_cash_out,
+                )
+            else:
+                required_share_amount = candidate_cash_out + amount_in_given_out(
+                    reserve_in_atomic=pool.no_reserve_atomic,
+                    reserve_out_atomic=pool.yes_reserve_atomic,
+                    weight_in=pool.no_weight,
+                    weight_out=pool.yes_weight,
+                    amount_out_atomic=candidate_cash_out,
+                )
+
+            if required_share_amount <= requested_share_amount_atomic:
+                best_cash_out = candidate_cash_out
+                best_share_amount = required_share_amount
+                low_cash_out = candidate_cash_out + 1
+            else:
+                high_cash_out = candidate_cash_out - 1
+
+        return best_cash_out, best_share_amount
 
     def _serialize_token_card(self, connection: sqlite3.Connection, row: sqlite3.Row) -> dict:
         return {

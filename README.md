@@ -50,9 +50,10 @@ exists yet, and rolling the series forward when a market is resolved.
 
 Third, the market engine stores a weighted YES/NO pool for each active market. Liquidity deposits
 mint equal YES and NO inventory into the pool, then retune the weights so the displayed YES/NO
-prices stay unchanged at the instant of deposit. Buys spend USDC. Sells request a USDC amount out.
-That sell shape is deliberate because it keeps complete-set redemption exact without inventing
-residual opposite-side dust in user positions.
+prices stay unchanged at the instant of deposit. Buys spend USDC. Sells submit a share amount and
+the backend uses an integer binary search to find the largest exact USDC redemption that can be
+funded without inventing opposite-side dust. If atomic rounding prevents filling the full requested
+share amount exactly, the response reports the small unfilled remainder explicitly.
 
 Fourth, the settlement loop captures hourly liquidity-weighted token prices from DexScreener,
 tracks each market's own ATH and 95% drawdown threshold, and resolves to `YES` or `NO` from stored

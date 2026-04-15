@@ -94,7 +94,7 @@ MVP. Important current constraints:
 - `BAGS_API_KEY` in `.env` for feed ingestion
 - `secret-tool` entries for the deposit master seed and treasury seed
 - network access to Bitquery for hourly settlement snapshot jobs
-- `BITQUERY_API_KEY` in `.env` for settlement snapshot jobs
+- `BITQUERY_API_KEY` in `.env` for settlement snapshot jobs, plus an active Bitquery billing period for the GraphQL endpoint
 
 ## Commands
 
@@ -116,7 +116,8 @@ The repo now includes a minimal EC2 deploy path under [`ops/ec2`](ops/ec2):
 
 - `bootstrap-host.sh` installs the host prerequisites, configures Caddy for `https://nukefm.xyz`, creates `/srv/nukefm`, installs a systemd service, and creates a bare git repo with a `post-receive` hook.
 - `push-production.sh` pushes the current local `HEAD` to that bare repo as `main`.
-- `sync-state.sh` copies `.env`, copies `data/nukefm.sqlite3` when present, and imports the two `secret-tool` seeds into the remote host.
+- `sync-state.sh` copies `.env` and imports the two `secret-tool` seeds into the remote host.
+- `sync-state.sh --with-db` additionally restores `data/nukefm.sqlite3` as an explicit operator action.
 - Set `NUKEFM_SSH_KEY=/path/to/key.pem` when the host uses a dedicated EC2 key pair instead of your default SSH agent/config.
 - Set `NUKEFM_SSH_CONFIG_FILE=/dev/null` if your local SSH config is broken or you need the scripts to ignore it.
 

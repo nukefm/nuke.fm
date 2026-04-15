@@ -60,3 +60,9 @@
 - The EC2 deploy path starts a private D-Bus plus GNOME keyring session inside the systemd service wrapper so the app can keep loading the Solana seeds from Secret Service instead of moving those seeds into `.env`.
 - Deploy updates are intentionally built around a bare git repo and `post-receive` hook on the host so normal code pushes stay one explicit step and do not depend on GitHub webhooks or Actions.
 - The EC2 host now terminates TLS with Caddy for `nukefm.xyz` and keeps uvicorn private on `127.0.0.1:8000`; proxy headers are trusted only from the local reverse proxy.
+- `ops/ec2/sync-state.sh` must not restore the SQLite DB by default. Database restore is now an explicit `--with-db` action because a failed later secret import previously clobbered live state.
+
+## Live Data Dependencies
+
+- The token-metric sync is operational with Jupiter after throttling requests, but the settlement snapshot job still depends on Bitquery billing, not just a bearer token. When Bitquery returns `402 No active billing period`, reference/ATH/drawdown/threshold fields cannot be rebuilt from the intended data source.
+- Market-liquidity account creation is now retried on Solana RPC `429` responses, and the bulk account-creation path prioritizes already-open markets first so the frontend-visible seeded markets recover before the long tail of awaiting-liquidity markets.

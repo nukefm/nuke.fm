@@ -210,6 +210,7 @@ class MarketStore:
             self._ensure_market_column(connection, "is_frontend_visible", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_market_column(connection, "superseded_by_market_id", "INTEGER REFERENCES markets(id) ON DELETE SET NULL")
             self._ensure_market_column(connection, "superseded_at", "TEXT")
+            self._backfill_market_lifecycle_anchors(connection)
 
     def list_token_cards(self, *, sort_by: str | None = None, sort_direction: str = "desc") -> list[dict]:
         with connect_database(self._database_path) as connection:
@@ -2323,6 +2324,73 @@ class MarketStore:
         if column_name in columns:
             return
         connection.execute(f"ALTER TABLE markets ADD COLUMN {column_name} {column_definition}")
+
+    def _backfill_market_lifecycle_anchors(self, connection: sqlite3.Connection) -> None:
+        legacy_rows = connection.execute(
+            """
+            SELECT id, token_mint, created_at, expiry
+            FROM markets
+            WHERE starting_price_usd IS NULL
+               OR threshold_price_usd IS NULL
+               OR range_floor_price_usd IS NULL
+               OR range_ceiling_price_usd IS NULL
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        for row in legacy_rows:
+            observed_price_row = connection.execute(
+                """
+                SELECT reference_price_usd AS observed_price_usd
+                FROM market_snapshots
+                WHERE market_id = ?
+                ORDER BY snapshot_hour ASC
+                LIMIT 1
+                """,
+                [row["id"]],
+            ).fetchone()
+            if observed_price_row is None:
+                observed_price_row = connection.execute(
+                    """
+                    SELECT source_price_usd AS observed_price_usd
+                    FROM token_metrics_snapshots
+                    WHERE token_mint = ?
+                      AND source_price_usd IS NOT NULL
+                    ORDER BY captured_at DESC
+                    LIMIT 1
+                    """,
+                    [row["token_mint"]],
+                ).fetchone()
+            if observed_price_row is None or observed_price_row["observed_price_usd"] is None:
+                logger.warning(
+                    "Leaving legacy market {} without fixed lifecycle anchors because no observed price is available.",
+                    row["id"],
+                )
+                continue
+
+            starting_price_usd = parse_decimal(observed_price_row["observed_price_usd"])
+            expiry = row["expiry"] or (self._parse_timestamp(row["created_at"]) + self._market_duration).isoformat()
+            connection.execute(
+                """
+                UPDATE markets
+                SET
+                    starting_price_usd = ?,
+                    threshold_price_usd = ?,
+                    range_floor_price_usd = ?,
+                    range_ceiling_price_usd = ?,
+                    expiry = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                [
+                    format_decimal(starting_price_usd),
+                    format_decimal(starting_price_usd * self._resolution_threshold_fraction),
+                    format_decimal(starting_price_usd * self._rollover_lower_bound_fraction),
+                    format_decimal(starting_price_usd * self._rollover_upper_bound_fraction),
+                    expiry,
+                    utc_now(),
+                    row["id"],
+                ],
+            )
 
     @staticmethod
     def _outstanding_treasury_debt_atomic(connection: sqlite3.Connection) -> int:

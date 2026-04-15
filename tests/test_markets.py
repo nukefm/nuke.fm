@@ -96,6 +96,257 @@ class SelectiveSettlementPriceClient:
         return self._prices_by_mint[token_mint]
 
 
+def test_initialize_migrates_legacy_market_in_place_and_preserves_deposit_address(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    with connect_database(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE tokens (
+                mint TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                name TEXT NOT NULL,
+                image_url TEXT,
+                launched_at TEXT,
+                creator TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE markets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_mint TEXT NOT NULL,
+                sequence_number INTEGER NOT NULL,
+                question TEXT NOT NULL,
+                state TEXT NOT NULL,
+                market_start TEXT,
+                expiry TEXT,
+                liquidity_deposit_address TEXT,
+                resolved_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(token_mint, sequence_number)
+            );
+
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_address TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE token_metrics_snapshots (
+                token_mint TEXT NOT NULL,
+                captured_at TEXT NOT NULL,
+                pair_count INTEGER NOT NULL,
+                underlying_volume_h24_usd TEXT,
+                underlying_market_cap_usd TEXT,
+                source_pair_address TEXT,
+                source_dex_id TEXT,
+                source_price_usd TEXT,
+                source_liquidity_usd TEXT,
+                PRIMARY KEY(token_mint, captured_at)
+            );
+
+            CREATE TABLE market_liquidity_accounts (
+                market_id INTEGER PRIMARY KEY,
+                owner_wallet_address TEXT NOT NULL UNIQUE,
+                token_account_address TEXT NOT NULL UNIQUE,
+                observed_balance_atomic INTEGER NOT NULL DEFAULT 0,
+                ata_initialized_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO tokens (mint, symbol, name, image_url, launched_at, creator, created_at, updated_at)
+            VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?)
+            """,
+            ["MintLegacy", "LEG", "Legacy", "2026-04-15T11:46:49+00:00", "2026-04-15T11:46:49+00:00"],
+        )
+        connection.execute(
+            """
+            INSERT INTO markets (
+                id,
+                token_mint,
+                sequence_number,
+                question,
+                state,
+                market_start,
+                expiry,
+                liquidity_deposit_address,
+                resolved_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            """,
+            [
+                7,
+                "MintLegacy",
+                1,
+                "Will LEG nuke by 90 days after this market opens?",
+                "open",
+                "2026-04-15T16:34:04+00:00",
+                "2026-07-14T16:34:04+00:00",
+                "legacy-deposit-address",
+                "2026-04-15T11:46:49+00:00",
+                "2026-04-15T16:34:04+00:00",
+            ],
+        )
+        connection.execute(
+            """
+            INSERT INTO market_liquidity_accounts (
+                market_id,
+                owner_wallet_address,
+                token_account_address,
+                observed_balance_atomic,
+                ata_initialized_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, 0, ?, ?, ?)
+            """,
+            [
+                7,
+                "legacy-owner-wallet",
+                "legacy-deposit-address",
+                "2026-04-15T16:30:00+00:00",
+                "2026-04-15T16:30:00+00:00",
+                "2026-04-15T16:30:00+00:00",
+            ],
+        )
+        connection.execute(
+            """
+            INSERT INTO token_metrics_snapshots (
+                token_mint,
+                captured_at,
+                pair_count,
+                underlying_volume_h24_usd,
+                underlying_market_cap_usd,
+                source_pair_address,
+                source_dex_id,
+                source_price_usd,
+                source_liquidity_usd
+            )
+            VALUES (?, ?, 1, NULL, NULL, 'pair-1', 'raydium', ?, '100')
+            """,
+            ["MintLegacy", "2026-04-15T16:30:26+00:00", "2.5"],
+        )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+
+    with connect_database(database_path) as connection:
+        migrated_market = connection.execute(
+            """
+            SELECT id, question, expiry, liquidity_deposit_address, starting_price_usd, threshold_price_usd, range_floor_price_usd, range_ceiling_price_usd
+            FROM markets
+            WHERE id = 7
+            """
+        ).fetchone()
+        migrated_account = connection.execute(
+            """
+            SELECT market_id, owner_wallet_address, token_account_address
+            FROM market_liquidity_accounts
+            WHERE market_id = 7
+            """
+        ).fetchone()
+
+    assert migrated_market is not None
+    assert migrated_market["id"] == 7
+    assert migrated_market["question"] == "Will LEG nuke?"
+    assert migrated_market["liquidity_deposit_address"] == "legacy-deposit-address"
+    assert migrated_market["starting_price_usd"] == "2.5"
+    assert migrated_market["threshold_price_usd"] == "0.25"
+    assert migrated_market["range_floor_price_usd"] == "0.625"
+    assert migrated_market["range_ceiling_price_usd"] == "10"
+    assert migrated_market["expiry"] == "2026-07-14T16:34:04+00:00"
+    assert migrated_account is not None
+    assert migrated_account["market_id"] == 7
+    assert migrated_account["token_account_address"] == "legacy-deposit-address"
+
+
+def test_initialize_prunes_dead_legacy_markets_without_observed_price(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    with connect_database(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE tokens (
+                mint TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                name TEXT NOT NULL,
+                image_url TEXT,
+                launched_at TEXT,
+                creator TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE markets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_mint TEXT NOT NULL,
+                sequence_number INTEGER NOT NULL,
+                question TEXT NOT NULL,
+                state TEXT NOT NULL,
+                market_start TEXT,
+                expiry TEXT,
+                liquidity_deposit_address TEXT,
+                resolved_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(token_mint, sequence_number)
+            );
+
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_address TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO tokens (mint, symbol, name, image_url, launched_at, creator, created_at, updated_at)
+            VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?)
+            """,
+            ["MintDead", "DEAD", "Dead", "2026-04-15T11:46:49+00:00", "2026-04-15T11:46:49+00:00"],
+        )
+        connection.execute(
+            """
+            INSERT INTO markets (
+                token_mint,
+                sequence_number,
+                question,
+                state,
+                market_start,
+                expiry,
+                liquidity_deposit_address,
+                resolved_at,
+                created_at,
+                updated_at
+            )
+            VALUES (?, 1, ?, 'awaiting_liquidity', NULL, NULL, NULL, NULL, ?, ?)
+            """,
+            [
+                "MintDead",
+                "Will DEAD nuke by 90 days after this market opens?",
+                "2026-04-15T11:46:49+00:00",
+                "2026-04-15T11:46:49+00:00",
+            ],
+        )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+
+    with connect_database(database_path) as connection:
+        remaining_markets = connection.execute("SELECT COUNT(*) AS count FROM markets").fetchone()["count"]
+
+    assert remaining_markets == 0
+
+
 def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     catalog = Catalog(database_path)

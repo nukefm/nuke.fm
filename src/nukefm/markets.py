@@ -210,7 +210,7 @@ class MarketStore:
             self._ensure_market_column(connection, "is_frontend_visible", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_market_column(connection, "superseded_by_market_id", "INTEGER REFERENCES markets(id) ON DELETE SET NULL")
             self._ensure_market_column(connection, "superseded_at", "TEXT")
-            self._backfill_market_lifecycle_anchors(connection)
+            self._migrate_legacy_markets(connection)
 
     def list_token_cards(self, *, sort_by: str | None = None, sort_direction: str = "desc") -> list[dict]:
         with connect_database(self._database_path) as connection:
@@ -2325,54 +2325,41 @@ class MarketStore:
             return
         connection.execute(f"ALTER TABLE markets ADD COLUMN {column_name} {column_definition}")
 
-    def _backfill_market_lifecycle_anchors(self, connection: sqlite3.Connection) -> None:
+    def _migrate_legacy_markets(self, connection: sqlite3.Connection) -> None:
         legacy_rows = connection.execute(
             """
-            SELECT id, token_mint, created_at, expiry
+            SELECT markets.id, markets.token_mint, markets.state, markets.market_start, markets.liquidity_deposit_address, markets.created_at, markets.expiry, tokens.symbol
             FROM markets
+            JOIN tokens ON tokens.mint = markets.token_mint
             WHERE starting_price_usd IS NULL
                OR threshold_price_usd IS NULL
                OR range_floor_price_usd IS NULL
                OR range_ceiling_price_usd IS NULL
+               OR expiry IS NULL
             ORDER BY id ASC
             """
         ).fetchall()
+        migrated_count = 0
+        pruned_count = 0
         for row in legacy_rows:
-            observed_price_row = connection.execute(
-                """
-                SELECT reference_price_usd AS observed_price_usd
-                FROM market_snapshots
-                WHERE market_id = ?
-                ORDER BY snapshot_hour ASC
-                LIMIT 1
-                """,
-                [row["id"]],
-            ).fetchone()
-            if observed_price_row is None:
-                observed_price_row = connection.execute(
-                    """
-                    SELECT source_price_usd AS observed_price_usd
-                    FROM token_metrics_snapshots
-                    WHERE token_mint = ?
-                      AND source_price_usd IS NOT NULL
-                    ORDER BY captured_at DESC
-                    LIMIT 1
-                    """,
-                    [row["token_mint"]],
-                ).fetchone()
-            if observed_price_row is None or observed_price_row["observed_price_usd"] is None:
-                logger.warning(
-                    "Leaving legacy market {} without fixed lifecycle anchors because no observed price is available.",
-                    row["id"],
+            starting_price_usd = self._legacy_market_starting_price(connection, row)
+            if starting_price_usd is None:
+                if self._legacy_market_can_be_pruned(connection, row):
+                    connection.execute("DELETE FROM markets WHERE id = ?", [row["id"]])
+                    pruned_count += 1
+                    continue
+                raise RuntimeError(
+                    "Cannot migrate legacy market "
+                    f"{row['id']} for {row['symbol']} without a real observed price. "
+                    "Refusing to regenerate a new market id because that would change the existing liquidity deposit address."
                 )
-                continue
 
-            starting_price_usd = parse_decimal(observed_price_row["observed_price_usd"])
             expiry = row["expiry"] or (self._parse_timestamp(row["created_at"]) + self._market_duration).isoformat()
             connection.execute(
                 """
                 UPDATE markets
                 SET
+                    question = ?,
                     starting_price_usd = ?,
                     threshold_price_usd = ?,
                     range_floor_price_usd = ?,
@@ -2382,6 +2369,7 @@ class MarketStore:
                 WHERE id = ?
                 """,
                 [
+                    seed_market_question(row["symbol"]),
                     format_decimal(starting_price_usd),
                     format_decimal(starting_price_usd * self._resolution_threshold_fraction),
                     format_decimal(starting_price_usd * self._rollover_lower_bound_fraction),
@@ -2391,6 +2379,65 @@ class MarketStore:
                     row["id"],
                 ],
             )
+            migrated_count += 1
+        if migrated_count or pruned_count:
+            logger.info(
+                "Migrated {} legacy markets in place and pruned {} dead legacy markets.",
+                migrated_count,
+                pruned_count,
+            )
+
+    @staticmethod
+    def _legacy_market_starting_price(connection: sqlite3.Connection, row: sqlite3.Row) -> Decimal | None:
+        observed_price_row = connection.execute(
+            """
+            SELECT reference_price_usd AS observed_price_usd
+            FROM market_snapshots
+            WHERE market_id = ?
+            ORDER BY snapshot_hour ASC
+            LIMIT 1
+            """,
+            [row["id"]],
+        ).fetchone()
+        if observed_price_row is not None and observed_price_row["observed_price_usd"] is not None:
+            return parse_decimal(observed_price_row["observed_price_usd"])
+
+        observed_price_row = connection.execute(
+            """
+            SELECT source_price_usd AS observed_price_usd
+            FROM token_metrics_snapshots
+            WHERE token_mint = ?
+              AND source_price_usd IS NOT NULL
+              AND captured_at >= ?
+            ORDER BY captured_at ASC
+            LIMIT 1
+            """,
+            [row["token_mint"], row["created_at"]],
+        ).fetchone()
+        if observed_price_row is None or observed_price_row["observed_price_usd"] is None:
+            return None
+        return parse_decimal(observed_price_row["observed_price_usd"])
+
+    @staticmethod
+    def _legacy_market_can_be_pruned(connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
+        if row["state"] != "awaiting_liquidity" or row["market_start"] is not None or row["liquidity_deposit_address"] is not None:
+            return False
+        for table_name in (
+            "market_liquidity_accounts",
+            "market_liquidity_deposits",
+            "market_liquidity_seed_events",
+            "market_pools",
+            "market_positions",
+            "market_trades",
+            "market_pair_snapshots",
+            "market_snapshots",
+            "market_chart_snapshots",
+            "market_payouts",
+            "market_revenue_sweeps",
+        ):
+            if connection.execute(f"SELECT 1 FROM {table_name} WHERE market_id = ? LIMIT 1", [row["id"]]).fetchone() is not None:
+                return False
+        return True
 
     @staticmethod
     def _outstanding_treasury_debt_atomic(connection: sqlite3.Connection) -> int:

@@ -91,6 +91,14 @@
         <dt>Total Liquidity</dt>
         <dd>{{ token.current_market.total_liquidity_usdc or "0" }}</dd>
       </div>
+      <div>
+        <dt>Underlying Volume</dt>
+        <dd>{{ token.current_market.underlying_volume_24h_usd or "Not captured yet" }}</dd>
+      </div>
+      <div>
+        <dt>Underlying Market Cap</dt>
+        <dd>{{ token.current_market.underlying_market_cap_usd or "Not captured yet" }}</dd>
+      </div>
     </dl>
   </article>
 

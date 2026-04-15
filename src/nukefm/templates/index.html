@@ -53,6 +53,26 @@
     <p class="eyebrow">Current Markets</p>
     <h2>Rolling series by token</h2>
   </div>
+  <form method="get">
+    <label>
+      Sort by
+      <select name="sort_by">
+        <option value="" {% if not sort_by %}selected{% endif %}>Launch order</option>
+        {% for value, label in sort_options %}
+        <option value="{{ value }}" {% if sort_by == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Direction
+      <select name="sort_direction">
+        {% for value, label in sort_directions %}
+        <option value="{{ value }}" {% if sort_direction == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Apply</button>
+  </form>
   <p class="section-copy">
     Every token has one current forward market. A resolved market immediately rolls into the next
     awaiting-liquidity series for that same mint.
@@ -112,6 +132,14 @@
       <div>
         <dt>Liquidity</dt>
         <dd>{{ token.current_market.total_liquidity_usdc or "0" }}</dd>
+      </div>
+      <div>
+        <dt>Underlying Volume</dt>
+        <dd>{{ token.current_market.underlying_volume_24h_usd or "Not captured yet" }}</dd>
+      </div>
+      <div>
+        <dt>Underlying Market Cap</dt>
+        <dd>{{ token.current_market.underlying_market_cap_usd or "Not captured yet" }}</dd>
       </div>
     </dl>
     <p class="market-mint">

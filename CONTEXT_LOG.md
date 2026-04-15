@@ -36,6 +36,13 @@
 - Market liquidity accounts are derived from the same master seed as user deposit accounts, but the HMAC input is domain-separated as `market:{market_id}` instead of `user:{user_id}`.
 - Revenue sweep is split into two layers on purpose: the database records the full remaining internal market backing as platform revenue, while the on-chain sweep only moves the resolved market's dedicated USDC deposit account back to treasury because user trading stays offchain inside the shared treasury balance.
 
+## Token Metrics And Sorting
+
+- The live public token-list order now lives in `MarketStore.list_token_cards()`, not in the catalog layer, so the same sort path can serve both `/v1/public/tokens` and `/`.
+- Token-level DexScreener metrics are stored as snapshots in SQLite instead of being fetched during reads. That keeps the board deterministic and lets the operator refresh metrics explicitly with a CLI command.
+- Underlying volume is summed across the token's current DexScreener pairs, while underlying market cap comes from the most-liquid pair that actually has a market-cap value.
+- Missing metrics stay `null` and are sorted last in both directions so absent data never dominates the board.
+
 ## EC2 Deploy
 
 - The current public endpoints still instantiate `SolanaTreasury` because listing tokens ensures missing market-liquidity accounts. A headless deploy therefore still needs `secret-tool` working even for the read-only web surface.

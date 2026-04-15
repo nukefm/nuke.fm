@@ -18,6 +18,7 @@ This repository currently includes these MVP slices:
 - quote and execute API-only trades against the weighted pool
 - capture hourly settlement snapshots from a rolling 24h median of historical trade prices
 - track per-market ATH, threshold, and drawdown from those median prices
+- capture DexScreener token metrics and sort the public market board by liquidity, dump %, underlying volume, or underlying market cap
 - resolve markets from stored historical snapshots, pay winning accounts, roll the next market forward, and record revenue sweeps
 - expose that catalog through a public JSON API
 - render the same catalog through a read-only web frontend
@@ -101,6 +102,7 @@ MVP. Important current constraints:
 - `uv run --env-file .env python -m nukefm serve --host 127.0.0.1 --port 8000`
 - `uv run --env-file .env python -m nukefm sync-deposits`
 - `uv run --env-file .env python -m nukefm sync-market-liquidity`
+- `uv run --env-file .env python -m nukefm sync-token-metrics`
 - `uv run --env-file .env python -m nukefm snapshot-markets`
 - `uv run --env-file .env python -m nukefm resolve-markets`
 - `uv run --env-file .env python -m nukefm process-withdrawals --limit 100`
@@ -174,6 +176,10 @@ token-account creation, withdrawal broadcasts, and resolved-market revenue sweep
 - `GET /v1/public/tokens/{mint}`
 - `GET /`
 - `GET /tokens/{mint}`
+
+The public token list and board support `sort_by` and `sort_direction` query parameters. Accepted
+`sort_by` values are `market_liquidity`, `dump_percentage`, `underlying_volume`, and
+`underlying_market_cap`.
 
 Deposits are reconciled from observed USDC token-account balance increases. That works cleanly at
 this stage because user deposit accounts are one-way funding addresses and the current MVP slice

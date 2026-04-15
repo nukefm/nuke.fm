@@ -15,7 +15,7 @@ from .auth import AuthService
 from .catalog import Catalog
 from .config import load_settings
 from .logging_utils import configure_logging
-from .markets import MarketStore
+from .markets import MarketStore, TOKEN_CARD_SORT_OPTIONS
 from .treasury import SolanaTreasury
 
 
@@ -105,6 +105,15 @@ def _ensure_market_liquidity_accounts(request: Request) -> None:
     request.app.state.market_store.ensure_missing_market_liquidity_accounts(_resolve_treasury(request))
 
 
+def _token_card_sort_context(sort_by: str | None, sort_direction: str) -> dict:
+    return {
+        "sort_by": "" if sort_by in (None, "") else sort_by,
+        "sort_direction": (sort_direction or "desc").lower(),
+        "sort_options": TOKEN_CARD_SORT_OPTIONS,
+        "sort_directions": (("desc", "Descending"), ("asc", "Ascending")),
+    }
+
+
 def _account_payload(request: Request, user_id: int) -> dict:
     account = request.app.state.account_store.get_account_overview(user_id)
     positions = request.app.state.market_store.list_positions(user_id)
@@ -158,9 +167,13 @@ def create_app(
         return {"ok": True}
 
     @app.get("/v1/public/tokens")
-    def list_tokens(request: Request) -> dict:
+    def list_tokens(request: Request, sort_by: str | None = None, sort_direction: str = "desc") -> dict:
         _ensure_market_liquidity_accounts(request)
-        return {"tokens": market_store.list_token_cards()}
+        try:
+            tokens = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return {"tokens": tokens}
 
     @app.get("/v1/public/tokens/{mint}")
     def token_detail(mint: str, request: Request) -> dict:
@@ -299,14 +312,19 @@ def create_app(
         return withdrawal
 
     @app.get("/", response_class=HTMLResponse)
-    def market_list_page(request: Request):
+    def market_list_page(request: Request, sort_by: str | None = None, sort_direction: str = "desc"):
         _ensure_market_liquidity_accounts(request)
+        try:
+            tokens = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
         return TEMPLATES.TemplateResponse(
             request=request,
             name="index.html",
             context={
-                "tokens": market_store.list_token_cards(),
+                "tokens": tokens,
                 "refresh_seconds": settings.frontend_refresh_seconds,
+                **_token_card_sort_context(sort_by, sort_direction),
             },
         )
 

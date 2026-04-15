@@ -11,6 +11,7 @@ from .app import create_app
 from .bags import BagsClient
 from .catalog import Catalog
 from .config import load_settings
+from .dexscreener import DexScreenerClient
 from .logging_utils import configure_logging
 from .markets import MarketStore
 from .settlement import BitquerySettlementPriceClient
@@ -30,6 +31,7 @@ def main() -> None:
 
     subparsers.add_parser("sync-deposits")
     subparsers.add_parser("sync-market-liquidity")
+    subparsers.add_parser("sync-token-metrics")
     subparsers.add_parser("snapshot-markets")
     subparsers.add_parser("resolve-markets")
 
@@ -54,13 +56,19 @@ def main() -> None:
         threshold_fraction=Decimal(settings.market_threshold_fraction),
     )
     market_store.initialize()
-    treasury = SolanaTreasury(
-        rpc_url=settings.solana_rpc_url,
-        usdc_mint=settings.solana_usdc_mint,
-        secret_tool_service=settings.secret_tool_service,
-        deposit_master_seed_secret_name=settings.deposit_master_seed_secret_name,
-        treasury_seed_secret_name=settings.treasury_seed_secret_name,
-    )
+    treasury: SolanaTreasury | None = None
+
+    def get_treasury() -> SolanaTreasury:
+        nonlocal treasury
+        if treasury is None:
+            treasury = SolanaTreasury(
+                rpc_url=settings.solana_rpc_url,
+                usdc_mint=settings.solana_usdc_mint,
+                secret_tool_service=settings.secret_tool_service,
+                deposit_master_seed_secret_name=settings.deposit_master_seed_secret_name,
+                treasury_seed_secret_name=settings.treasury_seed_secret_name,
+            )
+        return treasury
 
     if arguments.command == "sync-deposits":
         credited_deposits = treasury.reconcile_deposits(account_store)
@@ -68,13 +76,21 @@ def main() -> None:
         return
 
     if arguments.command == "sync-market-liquidity":
-        market_store.ensure_missing_market_liquidity_accounts(treasury)
-        credited_deposits = treasury.reconcile_market_liquidity(market_store)
+        treasury_instance = get_treasury()
+        market_store.ensure_missing_market_liquidity_accounts(treasury_instance)
+        credited_deposits = treasury_instance.reconcile_market_liquidity(market_store)
         logger.info(f"Credited {len(credited_deposits)} market liquidity balance changes.")
         return
 
+    if arguments.command == "sync-token-metrics":
+        captured_metrics = market_store.capture_token_metrics(
+            DexScreenerClient(base_url=settings.dexscreener_base_url),
+        )
+        logger.info(f"Captured {len(captured_metrics)} token metric snapshots.")
+        return
+
     if arguments.command == "process-withdrawals":
-        processed_withdrawals = treasury.process_withdrawals(account_store, limit=arguments.limit)
+        processed_withdrawals = get_treasury().process_withdrawals(account_store, limit=arguments.limit)
         logger.info(f"Processed {len(processed_withdrawals)} withdrawals.")
         return
 
@@ -88,7 +104,7 @@ def main() -> None:
         return
 
     if arguments.command == "resolve-markets":
-        resolved = market_store.resolve_markets(catalog=catalog, treasury=treasury)
+        resolved = market_store.resolve_markets(catalog=catalog, treasury=get_treasury())
         logger.info(f"Resolved {len(resolved)} markets.")
         return
 
@@ -101,7 +117,7 @@ def main() -> None:
         api_key=settings.bags_api_key,
     )
     ingested_count = catalog.ingest_tokens(client.list_tokens(limit=arguments.limit))
-    market_store.ensure_missing_market_liquidity_accounts(treasury)
+    market_store.ensure_missing_market_liquidity_accounts(get_treasury())
     logger.info(f"Ingested {ingested_count} Bags tokens into the market catalog.")
 
 

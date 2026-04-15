@@ -6,6 +6,7 @@ from nukefm.app import create_app
 from nukefm.bags import BagsToken
 from nukefm.catalog import Catalog
 from nukefm.config import Settings
+from nukefm.markets import MarketStore
 from nukefm.treasury import DepositAccountAddresses
 
 
@@ -44,6 +45,14 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
     catalog.ingest_tokens(
         [
             BagsToken(
+                mint="Mint111",
+                name="Alpha",
+                symbol="ALPHA",
+                image_url=None,
+                launched_at="2026-04-14T12:00:00+00:00",
+                creator=None,
+            ),
+            BagsToken(
                 mint="Mint333",
                 name="Gamma",
                 symbol="GAMMA",
@@ -54,16 +63,45 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
         ]
     )
 
-    app = create_app(settings=settings, catalog=catalog, treasury=FakeTreasury())
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+    treasury = FakeTreasury()
+    market_store.ensure_missing_market_liquidity_accounts(treasury)
+
+    alpha_market_id = market_store.get_token_detail("Mint111")["current_market"]["id"]
+    gamma_market_id = market_store.get_token_detail("Mint333")["current_market"]["id"]
+    market_store.record_market_liquidity_credit(
+        market_id=alpha_market_id,
+        amount_atomic=20_000_000,
+        observed_balance_after_atomic=20_000_000,
+        credited_at="2026-04-15T12:30:00+00:00",
+    )
+    market_store.record_market_liquidity_credit(
+        market_id=gamma_market_id,
+        amount_atomic=5_000_000,
+        observed_balance_after_atomic=5_000_000,
+        credited_at="2026-04-15T12:31:00+00:00",
+    )
+
+    app = create_app(settings=settings, catalog=catalog, market_store=market_store, treasury=treasury)
     client = TestClient(app)
 
     token_response = client.get("/v1/public/tokens")
     assert token_response.status_code == 200
     assert token_response.json()["tokens"][0]["symbol"] == "GAMMA"
-    assert token_response.json()["tokens"][0]["current_market"]["liquidity_deposit_address"] == "market-deposit-1"
+    assert token_response.json()["tokens"][0]["current_market"]["liquidity_deposit_address"] == "market-deposit-2"
 
-    page_response = client.get("/")
+    sorted_token_response = client.get("/v1/public/tokens?sort_by=market_liquidity&sort_direction=desc")
+    assert sorted_token_response.status_code == 200
+    assert [token["symbol"] for token in sorted_token_response.json()["tokens"]] == ["ALPHA", "GAMMA"]
+
+    page_response = client.get("/?sort_by=market_liquidity&sort_direction=desc")
     assert page_response.status_code == 200
+    assert 'option value="market_liquidity" selected' in page_response.text
+    assert 'option value="desc" selected' in page_response.text
+    assert page_response.text.index("<p class=\"symbol-badge\">ALPHA</p>") < page_response.text.index(
+        "<p class=\"symbol-badge\">GAMMA</p>"
+    )
     assert "Read the market board. Trade somewhere else." in page_response.text
 
     detail_response = client.get("/tokens/Mint333")

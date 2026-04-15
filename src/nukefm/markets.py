@@ -9,6 +9,7 @@ from .amounts import format_usdc_amount
 from .catalog import ACTIVE_MARKET_STATES
 from .database import connect_database, utc_now
 from .settlement import SettlementPriceClient
+from .dexscreener import DexScreenerPair, DexScreenerPairClient
 from .weighted_pool import (
     ONE,
     WeightedPoolState,
@@ -20,6 +21,15 @@ from .weighted_pool import (
     retuned_weights_for_equal_liquidity,
     yes_price,
 )
+
+
+TOKEN_CARD_SORT_OPTIONS = (
+    ("market_liquidity", "Market liquidity"),
+    ("dump_percentage", "Dump %"),
+    ("underlying_volume", "Underlying volume"),
+    ("underlying_market_cap", "Underlying market cap"),
+)
+TOKEN_CARD_SORT_FIELDS = {value for value, _ in TOKEN_CARD_SORT_OPTIONS}
 
 
 class MarketStore:
@@ -120,6 +130,19 @@ class MarketStore:
                     PRIMARY KEY(market_id, snapshot_hour)
                 );
 
+                CREATE TABLE IF NOT EXISTS token_metrics_snapshots (
+                    token_mint TEXT NOT NULL REFERENCES tokens(mint) ON DELETE CASCADE,
+                    captured_at TEXT NOT NULL,
+                    pair_count INTEGER NOT NULL,
+                    underlying_volume_h24_usd TEXT,
+                    underlying_market_cap_usd TEXT,
+                    source_pair_address TEXT,
+                    source_dex_id TEXT,
+                    source_price_usd TEXT,
+                    source_liquidity_usd TEXT,
+                    PRIMARY KEY(token_mint, captured_at)
+                );
+
                 CREATE TABLE IF NOT EXISTS market_payouts (
                     market_id INTEGER NOT NULL REFERENCES markets(id) ON DELETE CASCADE,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -146,10 +169,83 @@ class MarketStore:
                 """
             )
 
-    def list_token_cards(self) -> list[dict]:
+    def list_token_cards(self, *, sort_by: str | None = None, sort_direction: str = "desc") -> list[dict]:
         with connect_database(self._database_path) as connection:
             rows = self._list_current_market_rows(connection)
-            return [self._serialize_token_card(connection, row) for row in rows]
+            token_cards = [self._serialize_token_card(connection, row) for row in rows]
+
+            normalized_sort_by = None if sort_by in (None, "") else sort_by
+            if normalized_sort_by is None:
+                return token_cards
+
+            self._sort_token_cards(token_cards, sort_by=normalized_sort_by, sort_direction=sort_direction)
+            return token_cards
+
+    def capture_token_metrics(
+        self,
+        metrics_client: DexScreenerPairClient,
+        *,
+        captured_at: str | None = None,
+    ) -> list[dict]:
+        captured_timestamp = captured_at or utc_now()
+
+        with connect_database(self._database_path) as connection:
+            rows = self._list_current_market_rows(connection)
+            captured_rows: list[dict] = []
+
+            for row in rows:
+                pairs = metrics_client.list_token_pairs(row["mint"])
+                underlying_volume = self._sum_pair_volume(pairs)
+                market_cap_pair = self._most_liquid_pair_with_market_cap(pairs)
+
+                connection.execute(
+                    """
+                    INSERT INTO token_metrics_snapshots (
+                        token_mint,
+                        captured_at,
+                        pair_count,
+                        underlying_volume_h24_usd,
+                        underlying_market_cap_usd,
+                        source_pair_address,
+                        source_dex_id,
+                        source_price_usd,
+                        source_liquidity_usd
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(token_mint, captured_at) DO UPDATE SET
+                        pair_count = excluded.pair_count,
+                        underlying_volume_h24_usd = excluded.underlying_volume_h24_usd,
+                        underlying_market_cap_usd = excluded.underlying_market_cap_usd,
+                        source_pair_address = excluded.source_pair_address,
+                        source_dex_id = excluded.source_dex_id,
+                        source_price_usd = excluded.source_price_usd,
+                        source_liquidity_usd = excluded.source_liquidity_usd
+                    """,
+                    [
+                        row["mint"],
+                        captured_timestamp,
+                        len(pairs),
+                        None if underlying_volume is None else str(underlying_volume),
+                        None if market_cap_pair is None or market_cap_pair.market_cap_usd is None else str(market_cap_pair.market_cap_usd),
+                        None if market_cap_pair is None else market_cap_pair.pair_address,
+                        None if market_cap_pair is None else market_cap_pair.dex_id,
+                        None if market_cap_pair is None or market_cap_pair.price_usd is None else str(market_cap_pair.price_usd),
+                        None if market_cap_pair is None else str(market_cap_pair.liquidity_usd),
+                    ],
+                )
+                captured_rows.append(
+                    {
+                        "mint": row["mint"],
+                        "captured_at": captured_timestamp,
+                        "pair_count": len(pairs),
+                        "underlying_volume_usd": None if underlying_volume is None else format_decimal(underlying_volume),
+                        "underlying_market_cap_usd": None
+                        if market_cap_pair is None or market_cap_pair.market_cap_usd is None
+                        else format_decimal(market_cap_pair.market_cap_usd),
+                    }
+                )
+
+            return captured_rows
 
     def get_token_detail(self, mint: str) -> dict | None:
         with connect_database(self._database_path) as connection:
@@ -1095,6 +1191,7 @@ class MarketStore:
     def _serialize_market(self, connection: sqlite3.Connection, row: sqlite3.Row) -> dict:
         pool = self._load_pool(connection, row["id"], required=False)
         latest_snapshot = self._latest_snapshot_row(connection, row["id"])
+        latest_token_metrics = self._latest_token_metrics_row(connection, row["token_mint"])
         yes_price_usd = None if pool is None else format_decimal(yes_price(pool))
         no_price_usd = None if pool is None else format_decimal(no_price(pool))
 
@@ -1116,7 +1213,44 @@ class MarketStore:
             "drawdown_fraction": None if latest_snapshot is None else format_decimal(parse_decimal(latest_snapshot["drawdown_fraction"])),
             "threshold_price_usd": None if latest_snapshot is None else format_decimal(parse_decimal(latest_snapshot["threshold_price_usd"])),
             "total_liquidity_usdc": None if pool is None else format_usdc_amount(pool.total_liquidity_atomic),
+            "underlying_volume_24h_usd": None
+            if latest_token_metrics is None or latest_token_metrics["underlying_volume_h24_usd"] is None
+            else format_decimal(parse_decimal(latest_token_metrics["underlying_volume_h24_usd"])),
+            "underlying_market_cap_usd": None
+            if latest_token_metrics is None or latest_token_metrics["underlying_market_cap_usd"] is None
+            else format_decimal(parse_decimal(latest_token_metrics["underlying_market_cap_usd"])),
         }
+
+    @staticmethod
+    def _sort_token_cards(token_cards: list[dict], *, sort_by: str, sort_direction: str) -> None:
+        if sort_by not in TOKEN_CARD_SORT_FIELDS:
+            raise ValueError(f"Unsupported token card sort field: {sort_by}")
+        normalized_direction = sort_direction.lower()
+        if normalized_direction not in {"asc", "desc"}:
+            raise ValueError(f"Unsupported token card sort direction: {sort_direction}")
+
+        descending = normalized_direction == "desc"
+        token_cards.sort(key=lambda token_card: MarketStore._token_card_sort_key(token_card, sort_by, descending=descending))
+
+    @staticmethod
+    def _token_card_sort_key(token_card: dict, sort_by: str, *, descending: bool) -> tuple[int, Decimal]:
+        current_market = token_card["current_market"]
+        if sort_by == "market_liquidity":
+            value = current_market["total_liquidity_usdc"]
+        elif sort_by == "dump_percentage":
+            value = current_market["drawdown_fraction"]
+        elif sort_by == "underlying_volume":
+            value = current_market["underlying_volume_24h_usd"]
+        elif sort_by == "underlying_market_cap":
+            value = current_market["underlying_market_cap_usd"]
+        else:
+            raise ValueError(f"Unsupported token card sort field: {sort_by}")
+
+        if value is None:
+            return (1, Decimal("0"))
+
+        decimal_value = parse_decimal(value)
+        return (0, -decimal_value if descending else decimal_value)
 
     def _recent_activity(
         self,
@@ -1185,6 +1319,24 @@ class MarketStore:
         return sorted(activity, key=lambda item: item["timestamp"], reverse=True)
 
     @staticmethod
+    def _sum_pair_volume(pairs: list[DexScreenerPair]) -> Decimal | None:
+        total_volume = Decimal("0")
+        has_volume = False
+        for pair in pairs:
+            if pair.volume_h24_usd is None:
+                continue
+            total_volume += pair.volume_h24_usd
+            has_volume = True
+        return total_volume if has_volume else None
+
+    @staticmethod
+    def _most_liquid_pair_with_market_cap(pairs: list[DexScreenerPair]) -> DexScreenerPair | None:
+        eligible_pairs = [pair for pair in pairs if pair.market_cap_usd is not None]
+        if not eligible_pairs:
+            return None
+        return max(eligible_pairs, key=lambda pair: pair.liquidity_usd)
+
+    @staticmethod
     def _list_current_market_rows(connection: sqlite3.Connection) -> list[sqlite3.Row]:
         return connection.execute(
             """
@@ -1208,6 +1360,18 @@ class MarketStore:
             ORDER BY COALESCE(tokens.launched_at, tokens.created_at) DESC, tokens.symbol ASC
             """
         ).fetchall()
+
+    def _latest_token_metrics_row(self, connection: sqlite3.Connection, token_mint: str) -> sqlite3.Row | None:
+        return connection.execute(
+            """
+            SELECT *
+            FROM token_metrics_snapshots
+            WHERE token_mint = ?
+            ORDER BY captured_at DESC
+            LIMIT 1
+            """,
+            [token_mint],
+        ).fetchone()
 
     def _load_tradeable_market(self, connection: sqlite3.Connection, market_id: int) -> sqlite3.Row:
         row = connection.execute(

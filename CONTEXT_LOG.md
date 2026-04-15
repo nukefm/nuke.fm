@@ -20,3 +20,10 @@
 - Current-market price, liquidity-address, reference-price, ATH, drawdown, and threshold fields remain explicitly `null` in the public API until the later AMM, liquidity, and settlement deliverables exist. They are not inferred or synthesized.
 - The Bags launch-feed route is configurable through `config.json` as `bags_launch_feed_path` because the docs clearly expose the feed concept but the concrete path may shift over time.
 - The live Bags launch feed currently rejects query parameters such as `limit`. Fetch the feed without query parameters, then truncate locally after parsing the `response` array.
+
+## Private API And Treasury
+
+- Private API auth uses a one-time challenge string signed by the user's Solana wallet. API keys are then hashed at rest and used for later private requests.
+- User deposit wallets are deterministically re-derived from a single master seed stored in `secret-tool`. The repo never persists per-user private keys to disk.
+- The current deposit watcher credits users by reconciling monotonic increases in each dedicated USDC token-account balance. That is intentional for this delivery stage because the product has not started sweeping or trading from those deposit accounts yet.
+- Withdrawal requests reserve funds immediately in the internal ledger via a hold entry. Broadcast and confirmation happen later through the operator CLI, and failed withdrawals release that hold back into the ledger.

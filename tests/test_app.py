@@ -83,7 +83,7 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
         credited_at="2026-04-15T12:31:00+00:00",
     )
 
-    app = create_app(settings=settings, catalog=catalog, market_store=market_store, treasury=treasury)
+    app = create_app(settings=settings, catalog=catalog, market_store=market_store)
     client = TestClient(app)
 
     token_response = client.get("/v1/public/tokens")

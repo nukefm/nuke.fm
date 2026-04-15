@@ -12,6 +12,7 @@ remote="${user}@${host}"
 remote_root="/srv/nukefm/current"
 remote_runtime="/srv/nukefm/shared/runtime.env"
 ssh_key="${NUKEFM_SSH_KEY:-}"
+ssh_config_file="${NUKEFM_SSH_CONFIG_FILE:-}"
 ssh_args=()
 
 for required_command in scp secret-tool ssh; do
@@ -28,6 +29,10 @@ fi
 
 if [ -n "${ssh_key}" ]; then
     ssh_args=(-i "${ssh_key}")
+fi
+
+if [ -n "${ssh_config_file}" ]; then
+    ssh_args=(-F "${ssh_config_file}" "${ssh_args[@]}")
 fi
 
 ssh "${ssh_args[@]}" "${remote}" "install -d '${remote_root}' '${remote_root}/data'"

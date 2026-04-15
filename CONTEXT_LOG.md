@@ -45,6 +45,6 @@
 
 ## EC2 Deploy
 
-- The current public endpoints still instantiate `SolanaTreasury` because listing tokens ensures missing market-liquidity accounts. A headless deploy therefore still needs `secret-tool` working even for the read-only web surface.
+- The public web and public JSON routes no longer instantiate `SolanaTreasury`. They serve already-stored market state and stay read-only at request time.
 - The EC2 deploy path starts a private D-Bus plus GNOME keyring session inside the systemd service wrapper so the app can keep loading the Solana seeds from Secret Service instead of moving those seeds into `.env`.
 - Deploy updates are intentionally built around a bare git repo and `post-receive` hook on the host so normal code pushes stay one explicit step and do not depend on GitHub webhooks or Actions.

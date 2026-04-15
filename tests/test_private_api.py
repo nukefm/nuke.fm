@@ -184,6 +184,7 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     deposit_address = deposit_address_response.json()["deposit_address"]
     assert deposit_address == "deposit-1"
 
+    app.state.market_store.ensure_missing_market_liquidity_accounts(treasury)
     token_list_response = client.get("/v1/public/tokens")
     market_id = token_list_response.json()["tokens"][0]["current_market"]["id"]
     market_deposit_address = token_list_response.json()["tokens"][0]["current_market"]["liquidity_deposit_address"]

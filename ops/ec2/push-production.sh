@@ -11,15 +11,23 @@ user="${2:-ubuntu}"
 remote_name="${NUKEFM_PRODUCTION_REMOTE:-production}"
 remote_url="${user}@${host}:/srv/nukefm/git/nuke.fm.git"
 ssh_key="${NUKEFM_SSH_KEY:-}"
+ssh_config_file="${NUKEFM_SSH_CONFIG_FILE:-}"
+git_ssh_command="ssh"
 
 if ! command -v git >/dev/null 2>&1; then
     echo "Missing required command: git" >&2
     exit 1
 fi
 
-if [ -n "${ssh_key}" ]; then
-    export GIT_SSH_COMMAND="ssh -i ${ssh_key}"
+if [ -n "${ssh_config_file}" ]; then
+    git_ssh_command="${git_ssh_command} -F ${ssh_config_file}"
 fi
+
+if [ -n "${ssh_key}" ]; then
+    git_ssh_command="${git_ssh_command} -i ${ssh_key}"
+fi
+
+export GIT_SSH_COMMAND="${git_ssh_command}"
 
 if git remote get-url "${remote_name}" >/dev/null 2>&1; then
     existing_remote="$(git remote get-url "${remote_name}")"

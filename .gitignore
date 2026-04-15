@@ -63,6 +63,7 @@ target/
 var/
 tmp/
 *.lock
+!uv.lock
 
 # Compiled files
 *.jar

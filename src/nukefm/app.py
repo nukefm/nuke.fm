@@ -101,10 +101,6 @@ def _resolve_treasury(request: Request) -> SolanaTreasury:
     return treasury
 
 
-def _ensure_market_liquidity_accounts(request: Request) -> None:
-    request.app.state.market_store.ensure_missing_market_liquidity_accounts(_resolve_treasury(request))
-
-
 def _token_card_sort_context(sort_by: str | None, sort_direction: str) -> dict:
     return {
         "sort_by": "" if sort_by in (None, "") else sort_by,
@@ -168,7 +164,6 @@ def create_app(
 
     @app.get("/v1/public/tokens")
     def list_tokens(request: Request, sort_by: str | None = None, sort_direction: str = "desc") -> dict:
-        _ensure_market_liquidity_accounts(request)
         try:
             tokens = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)
         except ValueError as error:
@@ -177,7 +172,6 @@ def create_app(
 
     @app.get("/v1/public/tokens/{mint}")
     def token_detail(mint: str, request: Request) -> dict:
-        _ensure_market_liquidity_accounts(request)
         token = market_store.get_token_detail(mint)
         if token is None:
             raise HTTPException(status_code=404, detail="Token not found")
@@ -313,7 +307,6 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     def market_list_page(request: Request, sort_by: str | None = None, sort_direction: str = "desc"):
-        _ensure_market_liquidity_accounts(request)
         try:
             tokens = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)
         except ValueError as error:
@@ -330,7 +323,6 @@ def create_app(
 
     @app.get("/tokens/{mint}", response_class=HTMLResponse)
     def token_page(request: Request, mint: str):
-        _ensure_market_liquidity_accounts(request)
         token = market_store.get_token_detail(mint)
         if token is None:
             raise HTTPException(status_code=404, detail="Token not found")

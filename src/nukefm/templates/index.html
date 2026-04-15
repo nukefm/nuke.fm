@@ -15,18 +15,17 @@
 
 <section class="hero hero-grid">
   <div class="hero-copy-block">
-    <p class="eyebrow">Decision Board</p>
+    <p class="eyebrow">Token Risk Board</p>
     <h1>Scan which token markets are actionable right now.</h1>
     <p class="hero-copy">
-      Use this board to find the token pages that are live, seeded, or still waiting on a first
-      deposit. The point is to give a memecoin trader the fastest possible read on whether the PM
-      signal is live, meaningful, and worth checking against the underlying token.
+      Use the board to find which Bags tokens already have a live PM signal, which ones still need
+      a first seed, and which pages are worth opening for a deeper risk read before you trade the token.
     </p>
   </div>
   <aside class="hero-panel">
     <div class="hero-panel-header">
       <p class="panel-kicker">Board Snapshot</p>
-      <p class="panel-caption">What is live, what is blocked, and what still needs seed liquidity.</p>
+      <p class="panel-caption">Fast state read across the current market set.</p>
     </div>
     <dl class="hero-stats">
       <div>
@@ -34,15 +33,15 @@
         <dd>{{ tokens|length }}</dd>
       </div>
       <div>
-        <dt>Awaiting Liquidity</dt>
-        <dd>{{ counts.awaiting }}</dd>
-      </div>
-      <div>
-        <dt>Open Markets</dt>
+        <dt>Signal Live</dt>
         <dd>{{ counts.open }}</dd>
       </div>
       <div>
-        <dt>Halted Markets</dt>
+        <dt>Waiting On Seed</dt>
+        <dd>{{ counts.awaiting }}</dd>
+      </div>
+      <div>
+        <dt>Signal Paused</dt>
         <dd>{{ counts.halted }}</dd>
       </div>
     </dl>
@@ -53,7 +52,7 @@
 <section class="section-heading">
   <div>
     <p class="eyebrow">Current Markets</p>
-    <h2>Rolling series by token</h2>
+    <h2>Open the token pages that matter</h2>
   </div>
   <form method="get">
     <label>
@@ -76,8 +75,7 @@
     <button type="submit">Apply</button>
   </form>
   <p class="section-copy">
-    Every token has one current forward market. A resolved market immediately rolls into the next
-    awaiting-liquidity series for that same mint.
+    Every token has one current forward market. Resolved markets roll straight into the next current series.
   </p>
 </section>
 
@@ -85,17 +83,17 @@
   {% for token in tokens %}
   {% set market = token.current_market %}
   {% if market.state == "awaiting_liquidity" %}
-    {% set trader_state = "Signal waiting on seed" %}
-    {% set trader_state_note = "First funded liquidity deposit still needed." %}
+    {% set trader_state = "Waiting on seed" %}
+    {% set trader_state_note = "PM signal not live yet." %}
   {% elif market.state == "open" %}
     {% set trader_state = "Signal live" %}
-    {% set trader_state_note = "Trading signal is active." %}
+    {% set trader_state_note = "PM signal is producing a live read." %}
   {% elif market.state == "halted" %}
     {% set trader_state = "Signal paused" %}
-    {% set trader_state_note = "Market has halted and needs review." %}
+    {% set trader_state_note = "Review before treating it as actionable." %}
   {% else %}
     {% set trader_state = "Series closed" %}
-    {% set trader_state_note = "This market is already resolved." %}
+    {% set trader_state_note = "Historical context only." %}
   {% endif %}
   <a class="market-card" href="/tokens/{{ token.mint }}">
     <div class="market-card-top">
@@ -113,69 +111,56 @@
       </div>
       <span class="state-pill state-{{ market.state }}">{{ trader_state }}</span>
     </div>
+
     <p class="market-state-note">{{ trader_state_note }}</p>
-    <p class="market-mint">
-      <span>Mint</span>
-      <code title="{{ token.mint }}">{{ token.mint[:10] }}...{{ token.mint[-8:] }}</code>
-    </p>
-    <div class="market-brief-grid">
-      <div class="brief-card">
-        <dt>Signal</dt>
-        <dd>
+
+    <section class="decision-strip decision-strip-compact">
+      <article class="decision-card decision-card-primary">
+        <p class="decision-label">PM state</p>
+        <p class="decision-value">{{ trader_state }}</p>
+        <p class="decision-copy">
           {% if market.liquidity_deposit_address %}
-          {{ trader_state }}
+          Deposit path ready.
           {% else %}
-          Waiting on seed
-          {% endif %}
-        </dd>
-        <p>Liquidity deposit {% if market.liquidity_deposit_address %}ready{% else %}pending{% endif %}.</p>
-      </div>
-      <div class="brief-card">
-        <dt>Price watch</dt>
-        <dd>
-          {% if market.yes_price_usd and market.no_price_usd %}
-          YES {{ market.yes_price_usd }} / NO {{ market.no_price_usd }}
-          {% else %}
-          Opens after first seed
-          {% endif %}
-        </dd>
-        <p>Use this only after the market is funded.</p>
-      </div>
-      <div class="brief-card">
-        <dt>Token context</dt>
-        <dd>
-          {% if market.underlying_market_cap_usd or market.underlying_volume_24h_usd %}
-          {{ market.underlying_market_cap_usd or "Metrics pending" }}
-          {% else %}
-          Metrics pending
-          {% endif %}
-        </dd>
-        <p>
-          {% if market.underlying_market_cap_usd or market.underlying_volume_24h_usd %}
-          24h volume {{ market.underlying_volume_24h_usd or "unavailable" }}.
-          {% else %}
-          24h volume appears after token metrics are captured.
+          Deposit path pending.
           {% endif %}
         </p>
-      </div>
-      <div class="brief-card">
-        <dt>Trigger watch</dt>
-        <dd>
-          {% if market.reference_price_usd %}
-          Ref {{ market.reference_price_usd }}
-          {% else %}
-          No snapshot yet
-          {% endif %}
-        </dd>
-        <p>
+      </article>
+      <article class="decision-card">
+        <p class="decision-label">Trigger watch</p>
+        <p class="decision-value">{{ market.threshold_price_usd or market.reference_price_usd or "No trigger yet" }}</p>
+        <p class="decision-copy">
           {% if market.drawdown_fraction %}
           Drawdown {{ market.drawdown_fraction }}.
           {% else %}
-          Drawdown and threshold appear after the first snapshot.
+          Snapshot needed first.
           {% endif %}
         </p>
-      </div>
-    </div>
+      </article>
+      <article class="decision-card">
+        <p class="decision-label">Token tape</p>
+        <p class="decision-value">{{ market.underlying_market_cap_usd or "Market cap pending" }}</p>
+        <p class="decision-copy">
+          {% if market.underlying_volume_24h_usd %}
+          24h volume {{ market.underlying_volume_24h_usd }}.
+          {% else %}
+          Volume pending.
+          {% endif %}
+        </p>
+      </article>
+      <article class="decision-card">
+        <p class="decision-label">PM depth</p>
+        <p class="decision-value">{{ market.total_liquidity_usdc or "0" }}</p>
+        <p class="decision-copy">
+          {% if market.yes_price_usd and market.no_price_usd %}
+          YES {{ market.yes_price_usd }} / NO {{ market.no_price_usd }}.
+          {% else %}
+          Prices start after the first seed.
+          {% endif %}
+        </p>
+      </article>
+    </section>
+
     <p class="market-mint">
       <span>Liquidity Deposit</span>
       <code title="{{ market.liquidity_deposit_address or 'Unassigned' }}">
@@ -186,8 +171,9 @@
         {% endif %}
       </code>
     </p>
+
     <div class="market-card-footer">
-      <span>Token detail</span>
+      <span>Open token brief</span>
       <span class="arrow">→</span>
     </div>
   </a>

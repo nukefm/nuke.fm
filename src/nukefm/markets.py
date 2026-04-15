@@ -823,8 +823,7 @@ class MarketStore:
         captured_at: str | None = None,
     ) -> list[dict]:
         captured_timestamp = captured_at or utc_now()
-        snapshot_hour = self._snapshot_hour(captured_timestamp)
-        snapshot_time = self._parse_timestamp(snapshot_hour)
+        captured_time = self._parse_timestamp(captured_timestamp)
         captured_rows: list[dict] = []
 
         with connect_database(self._database_path) as connection:
@@ -843,17 +842,18 @@ class MarketStore:
                     raise ValueError(f"Market {market_row['id']} is missing market_start and cannot be snapshotted.")
 
                 market_start_time = self._parse_timestamp(market_start)
-                if market_start_time > snapshot_time:
+                if market_start_time > captured_time:
                     continue
-                window_start_time = max(market_start_time, snapshot_time - timedelta(hours=24))
+                snapshot_hour = self._snapshot_bucket_start(market_start_time, captured_time).isoformat()
+                window_start_time = max(market_start_time, captured_time - timedelta(hours=24))
                 reference_price = price_client.get_rolling_median_price(
                     market_row["token_mint"],
                     start_at=window_start_time.isoformat(),
-                    end_at=snapshot_hour,
+                    end_at=captured_timestamp,
                 )
                 latest_snapshot = self._latest_snapshot_row(connection, market_row["id"])
                 ath_price = reference_price
-                ath_timestamp = snapshot_hour
+                ath_timestamp = captured_timestamp
                 if latest_snapshot is not None:
                     previous_ath = parse_decimal(latest_snapshot["ath_price_usd"])
                     if previous_ath >= reference_price:
@@ -927,6 +927,7 @@ class MarketStore:
                     markets.expiry,
                     markets.state,
                     market_snapshots.snapshot_hour,
+                    market_snapshots.captured_at,
                     market_snapshots.reference_price_usd,
                     market_snapshots.ath_timestamp,
                     market_snapshots.threshold_price_usd
@@ -934,7 +935,7 @@ class MarketStore:
                 LEFT JOIN market_snapshots
                   ON market_snapshots.market_id = markets.id
                 WHERE markets.state IN ('open', 'halted')
-                ORDER BY markets.id ASC, market_snapshots.snapshot_hour ASC
+                ORDER BY markets.id ASC, market_snapshots.captured_at ASC
                 """
             ).fetchall()
 
@@ -952,12 +953,12 @@ class MarketStore:
 
                 expiry_time = self._parse_timestamp(row["expiry"])
                 for snapshot_row in snapshot_rows.get(market_id, []):
-                    snapshot_time = self._parse_timestamp(snapshot_row["snapshot_hour"])
+                    snapshot_time = self._parse_timestamp(snapshot_row["captured_at"])
                     if snapshot_time > self._parse_timestamp(snapshot_row["ath_timestamp"]) and snapshot_time <= expiry_time:
                         threshold_price = parse_decimal(snapshot_row["threshold_price_usd"])
                         reference_price = parse_decimal(snapshot_row["reference_price_usd"])
                         if reference_price <= threshold_price:
-                            markets_to_resolve.append((market_id, "resolved_yes", snapshot_row["snapshot_hour"]))
+                            markets_to_resolve.append((market_id, "resolved_yes", snapshot_row["captured_at"]))
                             break
                 else:
                     if resolution_time >= expiry_time:
@@ -1425,7 +1426,7 @@ class MarketStore:
         if latest_snapshot is not None:
             activity.append(
                 {
-                    "timestamp": latest_snapshot["snapshot_hour"],
+                    "timestamp": latest_snapshot["captured_at"],
                     "summary": f"Latest hourly reference price is {format_decimal(parse_decimal(latest_snapshot['reference_price_usd']))} USDC.",
                 }
             )
@@ -1778,16 +1779,17 @@ class MarketStore:
             SELECT *
             FROM market_snapshots
             WHERE market_id = ?
-            ORDER BY snapshot_hour DESC
+            ORDER BY captured_at DESC
             LIMIT 1
             """,
             [market_id],
         ).fetchone()
 
     @staticmethod
-    def _snapshot_hour(timestamp: str) -> str:
-        dt = MarketStore._parse_timestamp(timestamp)
-        return dt.replace(minute=0, second=0, microsecond=0).isoformat()
+    def _snapshot_bucket_start(market_start_time: datetime, captured_time: datetime) -> datetime:
+        elapsed_seconds = max((captured_time - market_start_time).total_seconds(), 0)
+        elapsed_hours = int(elapsed_seconds // 3600)
+        return market_start_time + timedelta(hours=elapsed_hours)
 
     @staticmethod
     def _parse_timestamp(timestamp: str) -> datetime:

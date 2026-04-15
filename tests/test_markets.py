@@ -148,7 +148,7 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     with connect_database(database_path) as connection:
         snapshot_rows = connection.execute(
             """
-            SELECT snapshot_hour, reference_price_usd, ath_price_usd, drawdown_fraction, threshold_price_usd
+            SELECT snapshot_hour, captured_at, reference_price_usd, ath_price_usd, drawdown_fraction, threshold_price_usd
             FROM market_snapshots
             WHERE market_id = ?
             ORDER BY snapshot_hour ASC
@@ -159,6 +159,7 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     assert [
         (
             row["snapshot_hour"],
+            row["captured_at"],
             row["reference_price_usd"],
             row["ath_price_usd"],
             row["drawdown_fraction"],
@@ -166,9 +167,9 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
         )
         for row in snapshot_rows
     ] == [
-        ("2026-04-15T13:00:00+00:00", "10", "10", "0", "0.50"),
-        ("2026-04-15T14:00:00+00:00", "0.4", "10", "0.96", "0.50"),
-        ("2026-04-15T15:00:00+00:00", "0.8", "10", "0.92", "0.50"),
+        ("2026-04-15T12:30:00+00:00", "2026-04-15T13:00:00+00:00", "10", "10", "0", "0.50"),
+        ("2026-04-15T13:30:00+00:00", "2026-04-15T14:00:00+00:00", "0.4", "10", "0.96", "0.50"),
+        ("2026-04-15T14:30:00+00:00", "2026-04-15T15:00:00+00:00", "0.8", "10", "0.92", "0.50"),
     ]
 
     resolved = market_store.resolve_markets(
@@ -188,7 +189,7 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     assert account_store.get_available_balance_atomic(user["id"]) > 30_000_000
 
 
-def test_snapshot_skips_hours_before_market_open(tmp_path: Path) -> None:
+def test_snapshot_captures_first_market_hour_immediately(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     catalog = Catalog(database_path)
     catalog.initialize()
@@ -217,16 +218,60 @@ def test_snapshot_skips_hours_before_market_open(tmp_path: Path) -> None:
         credited_at="2026-04-15T16:34:04+00:00",
     )
 
-    price_client = FakeSettlementPriceClient([Decimal("1")])
+    price_client = FakeSettlementPriceClient([Decimal("1"), Decimal("1.5")])
     captured = market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T16:34:30+00:00")
+    updated = market_store.capture_hourly_snapshots(price_client, captured_at="2026-04-15T16:50:00+00:00")
 
-    assert captured == []
-    assert price_client.calls == []
+    assert captured == [
+        {
+            "market_id": market_id,
+            "state": "open",
+            "reference_price_usd": "1",
+            "ath_price_usd": "1",
+            "threshold_price_usd": "0.05",
+        }
+    ]
+    assert updated == [
+        {
+            "market_id": market_id,
+            "state": "open",
+            "reference_price_usd": "1.5",
+            "ath_price_usd": "1.5",
+            "threshold_price_usd": "0.075",
+        }
+    ]
+    assert price_client.calls == [
+        {
+            "token_mint": "MintFresh",
+            "start_at": "2026-04-15T16:34:04+00:00",
+            "end_at": "2026-04-15T16:34:30+00:00",
+        },
+        {
+            "token_mint": "MintFresh",
+            "start_at": "2026-04-15T16:34:04+00:00",
+            "end_at": "2026-04-15T16:50:00+00:00",
+        },
+    ]
 
     with connect_database(database_path) as connection:
-        snapshot_count = connection.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0]
+        snapshot_rows = connection.execute(
+            """
+            SELECT snapshot_hour, captured_at, reference_price_usd, ath_price_usd, threshold_price_usd
+            FROM market_snapshots
+            WHERE market_id = ?
+            """,
+            [market_id],
+        ).fetchall()
 
-    assert snapshot_count == 0
+    assert [tuple(row) for row in snapshot_rows] == [
+        (
+            "2026-04-15T16:34:04+00:00",
+            "2026-04-15T16:50:00+00:00",
+            "1.5",
+            "1.5",
+            "0.075",
+        )
+    ]
 
 
 def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:

@@ -7,3 +7,5 @@
 - figure out how to regularise rug predictions
 - debug:
 - "Run the 5 minute `snapshot-market-charts` job after the market is live to populate this overlay."
+- move 50% of liq from old into new mkt
+- should we allow people to trade in these mkts?

@@ -13,10 +13,10 @@ TINY_PRICE_QUANTUM = Decimal("0.000000000001")
 
 @dataclass(frozen=True)
 class WeightedPoolState:
-    yes_reserve_atomic: int
-    no_reserve_atomic: int
-    yes_weight: Decimal
-    no_weight: Decimal
+    long_reserve_atomic: int
+    short_reserve_atomic: int
+    long_weight: Decimal
+    short_weight: Decimal
     cash_backing_atomic: int
     total_liquidity_atomic: int
 
@@ -33,16 +33,16 @@ def format_decimal(value: Decimal, quantum: Decimal = PRICE_QUANTUM) -> str:
     return format(normalized.normalize(), "f")
 
 
-def yes_price(pool: WeightedPoolState) -> Decimal:
-    yes_reserve = Decimal(pool.yes_reserve_atomic)
-    no_reserve = Decimal(pool.no_reserve_atomic)
-    numerator = no_reserve * pool.yes_weight
-    denominator = numerator + yes_reserve * pool.no_weight
+def long_price(pool: WeightedPoolState) -> Decimal:
+    long_reserve = Decimal(pool.long_reserve_atomic)
+    short_reserve = Decimal(pool.short_reserve_atomic)
+    numerator = short_reserve * pool.long_weight
+    denominator = numerator + long_reserve * pool.short_weight
     return numerator / denominator
 
 
-def no_price(pool: WeightedPoolState) -> Decimal:
-    return ONE - yes_price(pool)
+def short_price(pool: WeightedPoolState) -> Decimal:
+    return ONE - long_price(pool)
 
 
 def amount_out_given_in(
@@ -89,17 +89,35 @@ def amount_in_given_out(
 
 def retuned_weights_for_equal_liquidity(
     *,
-    yes_reserve_atomic: int,
-    no_reserve_atomic: int,
+    long_reserve_atomic: int,
+    short_reserve_atomic: int,
     equal_liquidity_atomic: int,
-    preserved_yes_price: Decimal,
+    preserved_long_price: Decimal,
 ) -> tuple[Decimal, Decimal]:
-    new_yes_reserve = Decimal(yes_reserve_atomic + equal_liquidity_atomic)
-    new_no_reserve = Decimal(no_reserve_atomic + equal_liquidity_atomic)
-    numerator = preserved_yes_price * new_yes_reserve
-    denominator = (new_no_reserve * (ONE - preserved_yes_price)) + numerator
-    updated_yes_weight = numerator / denominator
-    return updated_yes_weight, ONE - updated_yes_weight
+    return weights_for_price(
+        long_reserve_atomic=long_reserve_atomic + equal_liquidity_atomic,
+        short_reserve_atomic=short_reserve_atomic + equal_liquidity_atomic,
+        long_price=preserved_long_price,
+    )
+
+
+def weights_for_price(
+    *,
+    long_reserve_atomic: int,
+    short_reserve_atomic: int,
+    long_price: Decimal,
+) -> tuple[Decimal, Decimal]:
+    if long_reserve_atomic <= 0 or short_reserve_atomic <= 0:
+        raise ValueError("Pool reserves must remain positive.")
+    if long_price <= 0 or long_price >= ONE:
+        raise ValueError("Long price must be inside (0, 1).")
+
+    long_reserve = Decimal(long_reserve_atomic)
+    short_reserve = Decimal(short_reserve_atomic)
+    numerator = long_price * long_reserve
+    denominator = (short_reserve * (ONE - long_price)) + numerator
+    long_weight = numerator / denominator
+    return long_weight, ONE - long_weight
 
 
 def _pow_decimal(base: Decimal, exponent: Decimal) -> Decimal:

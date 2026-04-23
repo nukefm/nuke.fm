@@ -43,6 +43,8 @@
       <tr>
         <th scope="col">Token</th>
         <th scope="col">Predicted nuke %</th>
+        <th scope="col">Implied price</th>
+        <th scope="col">Expiry</th>
         <th scope="col">PM volume</th>
         <th scope="col">PM liquidity</th>
         <th scope="col">Underlying volume</th>
@@ -60,9 +62,11 @@
           </a>
         </th>
         <td class="nuke-cell">
-          <strong>{{ market.chance_of_outcome_percent or "Not live" }}</strong>
-          <small>{{ market.remaining_drop_percent }} from current price</small>
+          <strong>{{ market.predicted_nuke_percent or "Pending" }}</strong>
+          <small>Implied by predicted market cap</small>
         </td>
+        <td>{{ usd_display(market.implied_price_usd) or "Pending" }}</td>
+        <td>{{ market.expiry or "Pending" }}</td>
         <td>{{ usd_display(market.pm_volume_24h_usdc) }}</td>
         <td>{{ usd_display(market.total_liquidity_usdc) or "Pending" }}</td>
         <td>{{ usd_display(market.underlying_volume_24h_usd) or "Pending" }}</td>

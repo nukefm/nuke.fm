@@ -142,9 +142,9 @@ def create_app(
     market_store = market_store or MarketStore(
         settings.database_path,
         market_duration_days=settings.market_duration_days,
-        resolution_threshold_fraction=Decimal(settings.market_resolution_threshold_fraction),
-        rollover_lower_bound_fraction=Decimal(settings.market_rollover_lower_bound_fraction),
-        rollover_upper_bound_fraction=Decimal(settings.market_rollover_upper_bound_fraction),
+        market_price_range_multiple=Decimal(settings.market_price_range_multiple),
+        market_rollover_boundary_rate=Decimal(settings.market_rollover_boundary_rate),
+        market_rollover_liquidity_transfer_fraction=Decimal(settings.market_rollover_liquidity_transfer_fraction),
     )
     market_store.initialize()
     auth_service = auth_service or AuthService(

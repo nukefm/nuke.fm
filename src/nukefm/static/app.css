@@ -417,8 +417,7 @@ h2 {
   border: 1px solid var(--ube-300);
 }
 
-.state-resolved_yes,
-.state-resolved_no,
+.state-resolved,
 .state-void {
   color: var(--warm-charcoal);
   background: rgba(218, 212, 200, 0.3);

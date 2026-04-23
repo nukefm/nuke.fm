@@ -57,16 +57,16 @@ def test_snapshot_market_charts_runs_chart_capture(monkeypatch) -> None:
             database_path,
             *,
             market_duration_days,
-            resolution_threshold_fraction,
-            rollover_lower_bound_fraction,
-            rollover_upper_bound_fraction,
+            market_price_range_multiple,
+            market_rollover_boundary_rate,
+            market_rollover_liquidity_transfer_fraction,
         ) -> None:
             captured["market_store_init"] = {
                 "database_path": database_path,
                 "market_duration_days": market_duration_days,
-                "resolution_threshold_fraction": resolution_threshold_fraction,
-                "rollover_lower_bound_fraction": rollover_lower_bound_fraction,
-                "rollover_upper_bound_fraction": rollover_upper_bound_fraction,
+                "market_price_range_multiple": market_price_range_multiple,
+                "market_rollover_boundary_rate": market_rollover_boundary_rate,
+                "market_rollover_liquidity_transfer_fraction": market_rollover_liquidity_transfer_fraction,
             }
 
         def initialize(self) -> None:
@@ -84,9 +84,9 @@ def test_snapshot_market_charts_runs_chart_capture(monkeypatch) -> None:
                 "log_path": "logs/test.log",
                 "database_path": "data/test.sqlite3",
                 "market_duration_days": 90,
-                "market_resolution_threshold_fraction": "0.10",
-                "market_rollover_lower_bound_fraction": "0.25",
-                "market_rollover_upper_bound_fraction": "4.0",
+                "market_price_range_multiple": "10",
+                "market_rollover_boundary_rate": "0.85",
+                "market_rollover_liquidity_transfer_fraction": "0.80",
                 "jupiter_tokens_base_url": "https://jup.test/tokens",
             },
         )()
@@ -139,9 +139,9 @@ def test_sync_token_metrics_uses_jupiter_gems_client(monkeypatch) -> None:
             database_path,
             *,
             market_duration_days,
-            resolution_threshold_fraction,
-            rollover_lower_bound_fraction,
-            rollover_upper_bound_fraction,
+            market_price_range_multiple,
+            market_rollover_boundary_rate,
+            market_rollover_liquidity_transfer_fraction,
         ) -> None:
             captured["market_database_path"] = database_path
 
@@ -160,26 +160,27 @@ def test_sync_token_metrics_uses_jupiter_gems_client(monkeypatch) -> None:
                 "log_path": "logs/test.log",
                 "database_path": "data/test.sqlite3",
                 "market_duration_days": 90,
-                "market_resolution_threshold_fraction": "0.10",
-                "market_rollover_lower_bound_fraction": "0.25",
-                "market_rollover_upper_bound_fraction": "4.0",
+                "market_price_range_multiple": "10",
+                "market_rollover_boundary_rate": "0.85",
+                "market_rollover_liquidity_transfer_fraction": "0.80",
                 "jupiter_gems_base_url": "https://datapi.test/v1",
+                "jupiter_tokens_base_url": "https://tokens.test/v2",
             },
         )()
 
     def fake_configure_logging(log_path) -> None:
         captured["log_path"] = log_path
 
-    def fake_jupiter_gems_client(*, base_url):
-        captured["gems_base_url"] = base_url
-        return "fake-gems-client"
+    def fake_jupiter_tokens_client(*, base_url):
+        captured["tokens_base_url"] = base_url
+        return "fake-tokens-client"
 
     monkeypatch.setattr(__main__, "load_settings", fake_load_settings)
     monkeypatch.setattr(__main__, "configure_logging", fake_configure_logging)
     monkeypatch.setattr(__main__, "Catalog", FakeCatalog)
     monkeypatch.setattr(__main__, "AccountStore", FakeAccountStore)
     monkeypatch.setattr(__main__, "MarketStore", FakeMarketStore)
-    monkeypatch.setattr(__main__, "JupiterGemsClient", fake_jupiter_gems_client)
+    monkeypatch.setattr(__main__, "JupiterTokensClient", fake_jupiter_tokens_client)
     monkeypatch.setattr(sys, "argv", ["nukefm", "sync-token-metrics"])
 
     __main__.main()
@@ -188,5 +189,5 @@ def test_sync_token_metrics_uses_jupiter_gems_client(monkeypatch) -> None:
     assert captured["catalog_initialized"] is True
     assert captured["account_initialized"] is True
     assert captured["market_initialized"] is True
-    assert captured["gems_base_url"] == "https://datapi.test/v1"
-    assert captured["metrics_client"] == "fake-gems-client"
+    assert captured["tokens_base_url"] == "https://tokens.test/v2"
+    assert captured["metrics_client"] == "fake-tokens-client"

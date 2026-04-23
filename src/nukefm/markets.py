@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 import sqlite3
 
@@ -19,16 +19,20 @@ from .weighted_pool import (
     amount_in_given_out,
     amount_out_given_in,
     format_decimal,
-    no_price,
+    long_price,
     parse_decimal,
     retuned_weights_for_equal_liquidity,
-    yes_price,
+    short_price,
+    weights_for_price,
 )
 
 
 TOKEN_CARD_SORT_OPTIONS = (
+    ("predicted_nuke_percent", "Predicted nuke %"),
+    ("implied_price", "Implied price"),
+    ("expiry", "Expiry"),
+    ("pm_volume", "PM volume"),
     ("market_liquidity", "Market liquidity"),
-    ("dump_percentage", "Nuke distance"),
     ("underlying_volume", "Underlying volume"),
     ("underlying_market_cap", "Underlying market cap"),
 )
@@ -42,28 +46,45 @@ class MarketStore:
         database_path: Path,
         *,
         market_duration_days: int = 90,
-        resolution_threshold_fraction: Decimal = Decimal("0.10"),
-        rollover_lower_bound_fraction: Decimal = Decimal("0.25"),
-        rollover_upper_bound_fraction: Decimal = Decimal("4.0"),
+        market_price_range_multiple: Decimal = Decimal("10"),
+        market_rollover_boundary_rate: Decimal = Decimal("0.85"),
+        market_rollover_liquidity_transfer_fraction: Decimal = Decimal("0.80"),
     ) -> None:
         self._database_path = database_path
         self._market_duration = timedelta(days=market_duration_days)
-        self._resolution_threshold_fraction = resolution_threshold_fraction
-        self._rollover_lower_bound_fraction = rollover_lower_bound_fraction
-        self._rollover_upper_bound_fraction = rollover_upper_bound_fraction
+        if market_price_range_multiple <= ONE:
+            raise ValueError("market_price_range_multiple must be greater than 1.")
+        if market_rollover_boundary_rate <= Decimal("0.5") or market_rollover_boundary_rate >= ONE:
+            raise ValueError("market_rollover_boundary_rate must be inside (0.5, 1).")
+        if market_rollover_liquidity_transfer_fraction < 0 or market_rollover_liquidity_transfer_fraction > ONE:
+            raise ValueError("market_rollover_liquidity_transfer_fraction must be inside [0, 1].")
+        self._market_price_range_multiple = market_price_range_multiple
+        self._market_rollover_boundary_rate = market_rollover_boundary_rate
+        self._market_rollover_liquidity_transfer_fraction = market_rollover_liquidity_transfer_fraction
 
     def initialize(self) -> None:
         with connect_database(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            if self._has_legacy_binary_market_schema(connection):
+                self._reset_legacy_binary_market_state(connection)
             connection.executescript(
                 """
                 PRAGMA foreign_keys = ON;
 
                 CREATE TABLE IF NOT EXISTS market_pools (
                     market_id INTEGER PRIMARY KEY REFERENCES markets(id) ON DELETE CASCADE,
-                    yes_reserve_atomic INTEGER NOT NULL,
-                    no_reserve_atomic INTEGER NOT NULL,
-                    yes_weight TEXT NOT NULL,
-                    no_weight TEXT NOT NULL,
+                    long_reserve_atomic INTEGER NOT NULL,
+                    short_reserve_atomic INTEGER NOT NULL,
+                    long_weight TEXT NOT NULL,
+                    short_weight TEXT NOT NULL,
                     cash_backing_atomic INTEGER NOT NULL,
                     total_liquidity_atomic INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
@@ -111,8 +132,8 @@ class MarketStore:
                 CREATE TABLE IF NOT EXISTS market_positions (
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     market_id INTEGER NOT NULL REFERENCES markets(id) ON DELETE CASCADE,
-                    yes_shares_atomic INTEGER NOT NULL DEFAULT 0,
-                    no_shares_atomic INTEGER NOT NULL DEFAULT 0,
+                    long_shares_atomic INTEGER NOT NULL DEFAULT 0,
+                    short_shares_atomic INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY(user_id, market_id)
@@ -126,10 +147,10 @@ class MarketStore:
                     side TEXT NOT NULL,
                     cash_amount_atomic INTEGER NOT NULL,
                     share_amount_atomic INTEGER NOT NULL,
-                    before_yes_price TEXT NOT NULL,
-                    before_no_price TEXT NOT NULL,
-                    after_yes_price TEXT NOT NULL,
-                    after_no_price TEXT NOT NULL,
+                    before_long_price TEXT NOT NULL,
+                    before_short_price TEXT NOT NULL,
+                    after_long_price TEXT NOT NULL,
+                    after_short_price TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
 
@@ -149,10 +170,6 @@ class MarketStore:
                     snapshot_hour TEXT NOT NULL,
                     reference_price_usd TEXT NOT NULL,
                     pair_count INTEGER NOT NULL,
-                    ath_price_usd TEXT NOT NULL,
-                    ath_timestamp TEXT NOT NULL,
-                    drawdown_fraction TEXT NOT NULL,
-                    threshold_price_usd TEXT NOT NULL,
                     captured_at TEXT NOT NULL,
                     PRIMARY KEY(market_id, snapshot_hour)
                 );
@@ -161,7 +178,7 @@ class MarketStore:
                     market_id INTEGER NOT NULL REFERENCES markets(id) ON DELETE CASCADE,
                     captured_at TEXT NOT NULL,
                     underlying_price_usd TEXT NOT NULL,
-                    chance_of_outcome_percent TEXT NOT NULL,
+                    implied_price_usd TEXT NOT NULL,
                     PRIMARY KEY(market_id, captured_at)
                 );
 
@@ -171,6 +188,8 @@ class MarketStore:
                     pair_count INTEGER NOT NULL,
                     underlying_volume_h24_usd TEXT,
                     underlying_market_cap_usd TEXT,
+                    token_supply TEXT,
+                    market_cap_kind TEXT,
                     source_pair_address TEXT,
                     source_dex_id TEXT,
                     source_price_usd TEXT,
@@ -181,8 +200,11 @@ class MarketStore:
                 CREATE TABLE IF NOT EXISTS market_payouts (
                     market_id INTEGER NOT NULL REFERENCES markets(id) ON DELETE CASCADE,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    winning_outcome TEXT NOT NULL,
-                    winning_shares_atomic INTEGER NOT NULL,
+                    long_shares_atomic INTEGER NOT NULL,
+                    short_shares_atomic INTEGER NOT NULL,
+                    long_rate TEXT NOT NULL,
+                    short_rate TEXT NOT NULL,
+                    resolution_price_usd TEXT NOT NULL,
                     payout_atomic INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
                     PRIMARY KEY(market_id, user_id)
@@ -204,13 +226,13 @@ class MarketStore:
                 """
             )
             self._ensure_market_column(connection, "starting_price_usd", "TEXT")
-            self._ensure_market_column(connection, "threshold_price_usd", "TEXT")
-            self._ensure_market_column(connection, "range_floor_price_usd", "TEXT")
-            self._ensure_market_column(connection, "range_ceiling_price_usd", "TEXT")
+            self._ensure_market_column(connection, "min_price_usd", "TEXT")
+            self._ensure_market_column(connection, "max_price_usd", "TEXT")
             self._ensure_market_column(connection, "is_frontend_visible", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_market_column(connection, "superseded_by_market_id", "INTEGER REFERENCES markets(id) ON DELETE SET NULL")
             self._ensure_market_column(connection, "superseded_at", "TEXT")
-            self._migrate_legacy_markets(connection)
+            self._ensure_table_column(connection, "token_metrics_snapshots", "token_supply", "TEXT")
+            self._ensure_table_column(connection, "token_metrics_snapshots", "market_cap_kind", "TEXT")
 
     def list_token_cards(self, *, sort_by: str | None = None, sort_direction: str = "desc") -> list[dict]:
         with connect_database(self._database_path) as connection:
@@ -256,8 +278,14 @@ class MarketStore:
             for row in token_rows:
                 pairs = metrics_client.list_token_pairs(row["mint"])
                 underlying_volume = self._sum_pair_volume(pairs)
-                market_cap_pair = self._most_liquid_pair_with_market_cap(pairs)
                 price_pair = self._most_liquid_pair_with_price(pairs)
+                supply_pair = self._most_liquid_pair_with_supply(pairs)
+                source_pair = price_pair or supply_pair
+                derived_market_cap = None
+                market_cap_kind = None
+                if price_pair is not None and price_pair.price_usd is not None and supply_pair is not None:
+                    derived_market_cap = price_pair.price_usd * supply_pair.token_supply
+                    market_cap_kind = supply_pair.market_cap_kind
 
                 connection.execute(
                     """
@@ -267,16 +295,20 @@ class MarketStore:
                         pair_count,
                         underlying_volume_h24_usd,
                         underlying_market_cap_usd,
+                        token_supply,
+                        market_cap_kind,
                         source_pair_address,
                         source_dex_id,
                         source_price_usd,
                         source_liquidity_usd
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(token_mint, captured_at) DO UPDATE SET
                         pair_count = excluded.pair_count,
                         underlying_volume_h24_usd = excluded.underlying_volume_h24_usd,
                         underlying_market_cap_usd = excluded.underlying_market_cap_usd,
+                        token_supply = excluded.token_supply,
+                        market_cap_kind = excluded.market_cap_kind,
                         source_pair_address = excluded.source_pair_address,
                         source_dex_id = excluded.source_dex_id,
                         source_price_usd = excluded.source_price_usd,
@@ -287,9 +319,11 @@ class MarketStore:
                         captured_timestamp,
                         len(pairs),
                         None if underlying_volume is None else str(underlying_volume),
-                        None if market_cap_pair is None or market_cap_pair.market_cap_usd is None else str(market_cap_pair.market_cap_usd),
-                        None if market_cap_pair is None else market_cap_pair.pair_address,
-                        None if market_cap_pair is None else market_cap_pair.dex_id,
+                        None if derived_market_cap is None else str(derived_market_cap),
+                        None if supply_pair is None else str(supply_pair.token_supply),
+                        market_cap_kind,
+                        None if source_pair is None else source_pair.pair_address,
+                        None if source_pair is None else source_pair.dex_id,
                         None if price_pair is None or price_pair.price_usd is None else str(price_pair.price_usd),
                         None if price_pair is None or price_pair.liquidity_usd is None else str(price_pair.liquidity_usd),
                     ],
@@ -303,33 +337,22 @@ class MarketStore:
                             captured_timestamp,
                         )
                     else:
-                        parked_market = self._parked_market_row(connection, row["mint"])
-                        if parked_market is None:
-                            self._create_market(
-                                connection,
-                                token_mint=row["mint"],
-                                symbol=row["symbol"],
-                                created_at=captured_timestamp,
-                                starting_price_usd=price_pair.price_usd,
-                                is_frontend_visible=True,
-                            )
-                        else:
-                            self._activate_parked_market(
-                                connection,
-                                market_id=parked_market["id"],
-                                symbol=row["symbol"],
-                                activated_at=captured_timestamp,
-                                starting_price_usd=price_pair.price_usd,
-                            )
+                        self._create_market(
+                            connection,
+                            token_mint=row["mint"],
+                            symbol=row["symbol"],
+                            created_at=captured_timestamp,
+                            starting_price_usd=price_pair.price_usd,
+                            is_frontend_visible=True,
+                        )
                 captured_rows.append(
                     {
                         "mint": row["mint"],
                         "captured_at": captured_timestamp,
                         "pair_count": len(pairs),
                         "underlying_volume_usd": None if underlying_volume is None else format_decimal(underlying_volume),
-                        "underlying_market_cap_usd": None
-                        if market_cap_pair is None or market_cap_pair.market_cap_usd is None
-                        else format_decimal(market_cap_pair.market_cap_usd),
+                        "underlying_market_cap_usd": None if derived_market_cap is None else format_decimal(derived_market_cap),
+                        "market_cap_kind": market_cap_kind,
                     }
                 )
 
@@ -363,25 +386,25 @@ class MarketStore:
                     )
                     continue
 
-                chance_of_outcome_percent = yes_price(pool) * Decimal("100")
+                implied_price = self._implied_price_usd(long_price(pool), row)
                 connection.execute(
                     """
                     INSERT INTO market_chart_snapshots (
                         market_id,
                         captured_at,
                         underlying_price_usd,
-                        chance_of_outcome_percent
+                        implied_price_usd
                     )
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(market_id, captured_at) DO UPDATE SET
                         underlying_price_usd = excluded.underlying_price_usd,
-                        chance_of_outcome_percent = excluded.chance_of_outcome_percent
+                        implied_price_usd = excluded.implied_price_usd
                     """,
                     [
                         row["id"],
                         snapshot_time,
                         str(price_pair.price_usd),
-                        str(chance_of_outcome_percent),
+                        str(implied_price),
                     ],
                 )
                 captured_rows.append(
@@ -389,7 +412,7 @@ class MarketStore:
                         "market_id": row["id"],
                         "captured_at": snapshot_time,
                         "underlying_price_usd": format_decimal(price_pair.price_usd),
-                        "chance_of_outcome_percent": format_decimal(chance_of_outcome_percent),
+                        "implied_price_usd": format_decimal(implied_price),
                     }
                 )
 
@@ -430,7 +453,7 @@ class MarketStore:
                 FROM markets
                 JOIN tokens ON tokens.mint = markets.token_mint
                 WHERE token_mint = ?
-                  AND state IN ('resolved_yes', 'resolved_no', 'void')
+                  AND state IN ('resolved', 'void')
                 ORDER BY sequence_number DESC
                 """,
                 [mint],
@@ -533,10 +556,10 @@ class MarketStore:
                     side,
                     cash_amount_atomic,
                     share_amount_atomic,
-                    before_yes_price,
-                    before_no_price,
-                    after_yes_price,
-                    after_no_price,
+                    before_long_price,
+                    before_short_price,
+                    after_long_price,
+                    after_short_price,
                     created_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -549,10 +572,10 @@ class MarketStore:
                     side,
                     quote["cash_amount_atomic"],
                     quote["share_amount_atomic"],
-                    quote["before_yes_price_usd"],
-                    quote["before_no_price_usd"],
-                    quote["after_yes_price_usd"],
-                    quote["after_no_price_usd"],
+                    quote["before_long_price_usd"],
+                    quote["before_short_price_usd"],
+                    quote["after_long_price_usd"],
+                    quote["after_short_price_usd"],
                     executed_at,
                 ],
             ).fetchone()
@@ -584,13 +607,13 @@ class MarketStore:
                     markets.id AS market_id,
                     markets.question,
                     markets.state,
-                    market_positions.yes_shares_atomic,
-                    market_positions.no_shares_atomic
+                    market_positions.long_shares_atomic,
+                    market_positions.short_shares_atomic
                 FROM market_positions
                 JOIN markets ON markets.id = market_positions.market_id
                 JOIN tokens ON tokens.mint = markets.token_mint
                 WHERE market_positions.user_id = ?
-                  AND (market_positions.yes_shares_atomic > 0 OR market_positions.no_shares_atomic > 0)
+                  AND (market_positions.long_shares_atomic > 0 OR market_positions.short_shares_atomic > 0)
                 ORDER BY markets.id DESC
                 """,
                 [user_id],
@@ -599,12 +622,12 @@ class MarketStore:
             positions: list[dict] = []
             for row in rows:
                 pool = self._load_pool(connection, row["market_id"], required=False)
-                current_yes_price = None if pool is None else yes_price(pool)
-                current_no_price = None if pool is None else no_price(pool)
+                current_long_price = None if pool is None else long_price(pool)
+                current_short_price = None if pool is None else short_price(pool)
                 marked_value_atomic = 0
-                if current_yes_price is not None:
-                    marked_value_atomic += int(Decimal(row["yes_shares_atomic"]) * current_yes_price)
-                    marked_value_atomic += int(Decimal(row["no_shares_atomic"]) * current_no_price)
+                if current_long_price is not None:
+                    marked_value_atomic += int(Decimal(row["long_shares_atomic"]) * current_long_price)
+                    marked_value_atomic += int(Decimal(row["short_shares_atomic"]) * current_short_price)
                 positions.append(
                     {
                         "market_id": row["market_id"],
@@ -613,10 +636,10 @@ class MarketStore:
                         "name": row["name"],
                         "question": row["question"],
                         "state": row["state"],
-                        "yes_shares": format_usdc_amount(row["yes_shares_atomic"]),
-                        "no_shares": format_usdc_amount(row["no_shares_atomic"]),
-                        "yes_price_usd": None if current_yes_price is None else format_decimal(current_yes_price),
-                        "no_price_usd": None if current_no_price is None else format_decimal(current_no_price),
+                        "long_shares": format_usdc_amount(row["long_shares_atomic"]),
+                        "short_shares": format_usdc_amount(row["short_shares_atomic"]),
+                        "long_price_usd": None if current_long_price is None else format_decimal(current_long_price),
+                        "short_price_usd": None if current_short_price is None else format_decimal(current_short_price),
                         "marked_value_usdc": format_usdc_amount(marked_value_atomic),
                     }
                 )
@@ -633,10 +656,10 @@ class MarketStore:
                     market_trades.side,
                     market_trades.cash_amount_atomic,
                     market_trades.share_amount_atomic,
-                    market_trades.before_yes_price,
-                    market_trades.before_no_price,
-                    market_trades.after_yes_price,
-                    market_trades.after_no_price,
+                    market_trades.before_long_price,
+                    market_trades.before_short_price,
+                    market_trades.after_long_price,
+                    market_trades.after_short_price,
                     market_trades.created_at,
                     tokens.mint,
                     tokens.symbol,
@@ -660,10 +683,10 @@ class MarketStore:
                     "side": row["side"],
                     "amount_usdc": format_usdc_amount(row["cash_amount_atomic"]),
                     "share_amount": format_usdc_amount(row["share_amount_atomic"]),
-                    "before_yes_price_usd": row["before_yes_price"],
-                    "before_no_price_usd": row["before_no_price"],
-                    "after_yes_price_usd": row["after_yes_price"],
-                    "after_no_price_usd": row["after_no_price"],
+                    "before_long_price_usd": row["before_long_price"],
+                    "before_short_price_usd": row["before_short_price"],
+                    "after_long_price_usd": row["after_long_price"],
+                    "after_short_price_usd": row["after_short_price"],
                     "created_at": row["created_at"],
                 }
                 for row in rows
@@ -797,7 +820,7 @@ class MarketStore:
                 """,
                 [observed_balance_after_atomic, credited_at, market_id],
             )
-            yes_price_usd = self._apply_liquidity_credit(
+            long_price_usd = self._apply_liquidity_credit(
                 connection,
                 market_id=market_id,
                 amount_atomic=amount_atomic,
@@ -809,8 +832,8 @@ class MarketStore:
                 "amount_usdc": format_usdc_amount(amount_atomic),
                 "credited_at": credited_at,
                 "observed_balance_after_usdc": format_usdc_amount(observed_balance_after_atomic),
-                "yes_price_usd": format_decimal(yes_price_usd),
-                "no_price_usd": format_decimal(ONE - yes_price_usd),
+                "long_price_usd": format_decimal(long_price_usd),
+                "short_price_usd": format_decimal(ONE - long_price_usd),
             }
 
     def seed_top_markets_by_market_cap(
@@ -907,7 +930,7 @@ class MarketStore:
                     """,
                     [row["id"], week_start, amount_atomic, debt_entry["id"], credited_at],
                 )
-                yes_price_usd = self._apply_liquidity_credit(
+                long_price_usd = self._apply_liquidity_credit(
                     connection,
                     market_id=row["id"],
                     amount_atomic=amount_atomic,
@@ -921,8 +944,8 @@ class MarketStore:
                         "week_start": week_start,
                         "amount_usdc": format_usdc_amount(amount_atomic),
                         "treasury_debt_usdc": format_usdc_amount(amount_atomic),
-                        "yes_price_usd": format_decimal(yes_price_usd),
-                        "no_price_usd": format_decimal(ONE - yes_price_usd),
+                        "long_price_usd": format_decimal(long_price_usd),
+                        "short_price_usd": format_decimal(ONE - long_price_usd),
                     }
                 )
 
@@ -993,9 +1016,8 @@ class MarketStore:
                     markets.state,
                     markets.created_at,
                     markets.starting_price_usd,
-                    markets.threshold_price_usd,
-                    markets.range_floor_price_usd,
-                    markets.range_ceiling_price_usd,
+                    markets.min_price_usd,
+                    markets.max_price_usd,
                     markets.is_frontend_visible
                 FROM markets
                 JOIN tokens ON tokens.mint = markets.token_mint
@@ -1038,11 +1060,6 @@ class MarketStore:
                     )
                     continue
 
-                latest_snapshot = self._latest_snapshot_row(connection, market_row["id"])
-                starting_price = parse_decimal(market_row["starting_price_usd"])
-                threshold_price = parse_decimal(market_row["threshold_price_usd"])
-                price_change_fraction = Decimal("0") if starting_price == 0 else ONE - (reference_price / starting_price)
-
                 connection.execute(
                     """
                     INSERT INTO market_snapshots (
@@ -1050,20 +1067,12 @@ class MarketStore:
                         snapshot_hour,
                         reference_price_usd,
                         pair_count,
-                        ath_price_usd,
-                        ath_timestamp,
-                        drawdown_fraction,
-                        threshold_price_usd,
                         captured_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(market_id, snapshot_hour) DO UPDATE SET
                         reference_price_usd = excluded.reference_price_usd,
                         pair_count = excluded.pair_count,
-                        ath_price_usd = excluded.ath_price_usd,
-                        ath_timestamp = excluded.ath_timestamp,
-                        drawdown_fraction = excluded.drawdown_fraction,
-                        threshold_price_usd = excluded.threshold_price_usd,
                         captured_at = excluded.captured_at
                     """,
                     [
@@ -1071,10 +1080,6 @@ class MarketStore:
                         next_snapshot_hour.isoformat(),
                         format_decimal(reference_price),
                         1,
-                        format_decimal(starting_price),
-                        market_row["created_at"],
-                        format_decimal(price_change_fraction),
-                        format_decimal(threshold_price),
                         captured_timestamp,
                     ],
                 )
@@ -1082,7 +1087,7 @@ class MarketStore:
 
                 if (
                     bool(market_row["is_frontend_visible"])
-                    and self._price_outside_rollover_range(reference_price, market_row)
+                    and self._snapshot_touches_rollover_boundary(reference_price, market_row)
                     and self._frontend_visible_market_row(connection, market_row["token_mint"])["id"] == market_row["id"]
                 ):
                     self._create_successor_market(
@@ -1096,7 +1101,7 @@ class MarketStore:
                         "market_id": market_row["id"],
                         "state": market_row["state"],
                         "reference_price_usd": format_decimal(reference_price),
-                        "threshold_price_usd": format_decimal(threshold_price),
+                        "long_rate": format_decimal(self._long_rate_for_price(reference_price, market_row)),
                     }
                 )
         return captured_rows
@@ -1116,7 +1121,8 @@ class MarketStore:
                     markets.state,
                     markets.is_frontend_visible,
                     markets.starting_price_usd,
-                    markets.threshold_price_usd,
+                    markets.min_price_usd,
+                    markets.max_price_usd,
                     market_snapshots.snapshot_hour,
                     market_snapshots.reference_price_usd
                 FROM markets
@@ -1134,55 +1140,51 @@ class MarketStore:
                 if row["snapshot_hour"] is not None:
                     snapshot_rows.setdefault(row["id"], []).append(row)
 
-            markets_to_resolve: list[tuple[int, str, str]] = []
+            markets_to_resolve: list[tuple[int, str, Decimal, bool]] = []
             for market_id, row in market_rows.items():
                 if row["expiry"] is None:
                     continue
 
                 expiry_time = self._parse_timestamp(row["expiry"])
-                threshold_price = parse_decimal(row["threshold_price_usd"])
-                latest_price_before_expiry = parse_decimal(row["starting_price_usd"])
-                for snapshot_row in snapshot_rows.get(market_id, []):
-                    snapshot_time = self._parse_timestamp(snapshot_row["snapshot_hour"])
-                    if snapshot_time > expiry_time:
-                        continue
-                    latest_price_before_expiry = parse_decimal(snapshot_row["reference_price_usd"])
-                    if latest_price_before_expiry <= threshold_price:
-                        markets_to_resolve.append(
-                            (
-                                market_id,
-                                "resolved_yes",
-                                snapshot_row["snapshot_hour"],
-                                bool(row["is_frontend_visible"]),
-                                latest_price_before_expiry,
-                            )
-                        )
-                        break
-                else:
-                    if resolution_time >= expiry_time:
-                        markets_to_resolve.append(
-                            (
-                                market_id,
-                                "resolved_no",
-                                resolution_timestamp,
-                                bool(row["is_frontend_visible"]),
-                                latest_price_before_expiry,
-                            )
-                        )
+                if resolution_time < expiry_time:
+                    continue
 
-        for market_id, outcome_state, market_resolved_at, should_create_successor, successor_price_usd in markets_to_resolve:
+                latest_snapshot_before_expiry = None
+                for snapshot_row in snapshot_rows.get(market_id, []):
+                    if self._parse_timestamp(snapshot_row["snapshot_hour"]) <= expiry_time:
+                        latest_snapshot_before_expiry = snapshot_row
+
+                if latest_snapshot_before_expiry is None:
+                    logger.warning(
+                        "Market {} reached expiry {} but has no stored 24h-median snapshot at or before expiry; leaving unresolved.",
+                        market_id,
+                        row["expiry"],
+                    )
+                    continue
+
+                markets_to_resolve.append(
+                    (
+                        market_id,
+                        latest_snapshot_before_expiry["snapshot_hour"],
+                        parse_decimal(latest_snapshot_before_expiry["reference_price_usd"]),
+                        bool(row["is_frontend_visible"]),
+                    )
+                )
+
+        for market_id, market_resolved_at, resolution_price_usd, should_create_successor in markets_to_resolve:
             self._settle_market(
                 catalog,
                 market_id,
-                outcome_state,
                 market_resolved_at,
-                successor_price_usd=successor_price_usd if should_create_successor else None,
+                resolution_price_usd=resolution_price_usd,
+                successor_price_usd=resolution_price_usd if should_create_successor else None,
             )
             resolved_markets.append(
                 {
                     "market_id": market_id,
-                    "state": outcome_state,
+                    "state": "resolved",
                     "resolved_at": market_resolved_at,
+                    "resolution_price_usd": format_decimal(resolution_price_usd),
                 }
             )
 
@@ -1245,13 +1247,11 @@ class MarketStore:
         self,
         catalog,
         market_id: int,
-        outcome_state: str,
         resolved_at: str,
         *,
+        resolution_price_usd: Decimal,
         successor_price_usd: Decimal | None,
     ) -> None:
-        winning_outcome = "yes" if outcome_state == "resolved_yes" else "no"
-        winning_column = "yes_shares_atomic" if winning_outcome == "yes" else "no_shares_atomic"
         create_successor = False
         successor_token_mint = ""
         successor_symbol = ""
@@ -1270,39 +1270,61 @@ class MarketStore:
             if market_row is None:
                 raise LookupError(f"Unknown market id: {market_id}")
             pool = self._load_pool(connection, market_id)
+            long_rate = self._long_rate_for_price(resolution_price_usd, market_row)
+            short_rate = ONE - long_rate
             positions = connection.execute(
-                f"""
-                SELECT user_id, {winning_column} AS winning_shares_atomic
+                """
+                SELECT user_id, long_shares_atomic, short_shares_atomic
                 FROM market_positions
                 WHERE market_id = ?
-                  AND {winning_column} > 0
+                  AND (long_shares_atomic > 0 OR short_shares_atomic > 0)
                 ORDER BY user_id ASC
                 """,
                 [market_id],
             ).fetchall()
-            total_payout_atomic = sum(row["winning_shares_atomic"] for row in positions)
+            payouts = [
+                (
+                    position,
+                    int(
+                        (
+                            Decimal(position["long_shares_atomic"]) * long_rate
+                            + Decimal(position["short_shares_atomic"]) * short_rate
+                        ).to_integral_value(rounding=ROUND_DOWN)
+                    ),
+                )
+                for position in positions
+            ]
+            total_payout_atomic = sum(payout_atomic for _, payout_atomic in payouts)
             if total_payout_atomic > pool.cash_backing_atomic:
                 raise RuntimeError(f"Market {market_id} is undercollateralized at resolution.")
 
-            for position in positions:
+            for position, payout_atomic in payouts:
+                if payout_atomic <= 0:
+                    continue
                 connection.execute(
                     """
                     INSERT INTO market_payouts (
                         market_id,
                         user_id,
-                        winning_outcome,
-                        winning_shares_atomic,
+                        long_shares_atomic,
+                        short_shares_atomic,
+                        long_rate,
+                        short_rate,
+                        resolution_price_usd,
                         payout_atomic,
                         created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         market_id,
                         position["user_id"],
-                        winning_outcome,
-                        position["winning_shares_atomic"],
-                        position["winning_shares_atomic"],
+                        position["long_shares_atomic"],
+                        position["short_shares_atomic"],
+                        format_decimal(long_rate),
+                        format_decimal(short_rate),
+                        format_decimal(resolution_price_usd),
+                        payout_atomic,
                         resolved_at,
                     ],
                 )
@@ -1310,17 +1332,17 @@ class MarketStore:
                     connection,
                     user_id=position["user_id"],
                     entry_type="market_payout",
-                    amount_atomic=position["winning_shares_atomic"],
+                    amount_atomic=payout_atomic,
                     reference_type="market_payout",
                     reference_id=str(market_id),
-                    note=f"Resolved {winning_outcome.upper()} payout for market {market_id}.",
+                    note=f"Resolved scalar payout for market {market_id}.",
                     created_at=resolved_at,
                 )
 
             connection.execute(
                 """
                 UPDATE market_positions
-                SET yes_shares_atomic = 0, no_shares_atomic = 0, updated_at = ?
+                SET long_shares_atomic = 0, short_shares_atomic = 0, updated_at = ?
                 WHERE market_id = ?
                 """,
                 [resolved_at, market_id],
@@ -1375,7 +1397,7 @@ class MarketStore:
             successor_symbol = market_row["symbol"]
             next_starting_price = successor_price_usd or parse_decimal(market_row["starting_price_usd"])
 
-        catalog.resolve_market(market_id, outcome_state, resolved_at=resolved_at)
+        catalog.resolve_market(market_id, "resolved", resolved_at=resolved_at)
         if not create_successor or next_starting_price is None:
             return
 
@@ -1406,15 +1428,15 @@ class MarketStore:
         side: str,
         amount_atomic: int,
     ) -> dict:
-        if outcome not in {"yes", "no"}:
-            raise ValueError("Outcome must be 'yes' or 'no'.")
+        if outcome not in {"long", "short"}:
+            raise ValueError("Outcome must be 'long' or 'short'.")
         if side not in {"buy", "sell"}:
             raise ValueError("Side must be 'buy' or 'sell'.")
         if amount_atomic <= 0:
             raise ValueError("Trade amount must be positive.")
 
-        before_yes_price = yes_price(pool)
-        before_no_price = no_price(pool)
+        before_long_price = long_price(pool)
+        before_short_price = short_price(pool)
 
         if side == "buy":
             cash_amount_atomic = amount_atomic
@@ -1442,47 +1464,47 @@ class MarketStore:
             "average_price_usdc": format_decimal(Decimal(cash_amount_atomic) / Decimal(share_amount_atomic)),
             "requested_share_amount": None if side == "buy" else format_usdc_amount(requested_share_amount_atomic),
             "unfilled_share_amount": None if side == "buy" else format_usdc_amount(requested_share_amount_atomic - share_amount_atomic),
-            "before_yes_price_usd": format_decimal(before_yes_price),
-            "before_no_price_usd": format_decimal(before_no_price),
-            "after_yes_price_usd": format_decimal(yes_price(pool_after)),
-            "after_no_price_usd": format_decimal(no_price(pool_after)),
+            "before_long_price_usd": format_decimal(before_long_price),
+            "before_short_price_usd": format_decimal(before_short_price),
+            "after_long_price_usd": format_decimal(long_price(pool_after)),
+            "after_short_price_usd": format_decimal(short_price(pool_after)),
             "pool_after": pool_after,
         }
 
     @staticmethod
     def _quote_buy(pool: WeightedPoolState, outcome: str, amount_atomic: int) -> tuple[int, WeightedPoolState]:
         # Buying with cash mints complete sets off-pool, then swaps the opposite leg through the pool.
-        if outcome == "yes":
+        if outcome == "long":
             swap_out_atomic = amount_out_given_in(
-                reserve_in_atomic=pool.no_reserve_atomic,
-                reserve_out_atomic=pool.yes_reserve_atomic,
-                weight_in=pool.no_weight,
-                weight_out=pool.yes_weight,
+                reserve_in_atomic=pool.short_reserve_atomic,
+                reserve_out_atomic=pool.long_reserve_atomic,
+                weight_in=pool.short_weight,
+                weight_out=pool.long_weight,
                 amount_in_atomic=amount_atomic,
             )
             share_amount_atomic = amount_atomic + swap_out_atomic
             return share_amount_atomic, WeightedPoolState(
-                yes_reserve_atomic=pool.yes_reserve_atomic - swap_out_atomic,
-                no_reserve_atomic=pool.no_reserve_atomic + amount_atomic,
-                yes_weight=pool.yes_weight,
-                no_weight=pool.no_weight,
+                long_reserve_atomic=pool.long_reserve_atomic - swap_out_atomic,
+                short_reserve_atomic=pool.short_reserve_atomic + amount_atomic,
+                long_weight=pool.long_weight,
+                short_weight=pool.short_weight,
                 cash_backing_atomic=pool.cash_backing_atomic + amount_atomic,
                 total_liquidity_atomic=pool.total_liquidity_atomic,
             )
 
         swap_out_atomic = amount_out_given_in(
-            reserve_in_atomic=pool.yes_reserve_atomic,
-            reserve_out_atomic=pool.no_reserve_atomic,
-            weight_in=pool.yes_weight,
-            weight_out=pool.no_weight,
+            reserve_in_atomic=pool.long_reserve_atomic,
+            reserve_out_atomic=pool.short_reserve_atomic,
+            weight_in=pool.long_weight,
+            weight_out=pool.short_weight,
             amount_in_atomic=amount_atomic,
         )
         share_amount_atomic = amount_atomic + swap_out_atomic
         return share_amount_atomic, WeightedPoolState(
-            yes_reserve_atomic=pool.yes_reserve_atomic + amount_atomic,
-            no_reserve_atomic=pool.no_reserve_atomic - swap_out_atomic,
-            yes_weight=pool.yes_weight,
-            no_weight=pool.no_weight,
+            long_reserve_atomic=pool.long_reserve_atomic + amount_atomic,
+            short_reserve_atomic=pool.short_reserve_atomic - swap_out_atomic,
+            long_weight=pool.long_weight,
+            short_weight=pool.short_weight,
             cash_backing_atomic=pool.cash_backing_atomic + amount_atomic,
             total_liquidity_atomic=pool.total_liquidity_atomic,
         )
@@ -1500,21 +1522,21 @@ class MarketStore:
         )
         swap_input_atomic = share_amount_atomic - cash_amount_atomic
 
-        if outcome == "yes":
+        if outcome == "long":
             return cash_amount_atomic, share_amount_atomic, WeightedPoolState(
-                yes_reserve_atomic=pool.yes_reserve_atomic + swap_input_atomic,
-                no_reserve_atomic=pool.no_reserve_atomic - cash_amount_atomic,
-                yes_weight=pool.yes_weight,
-                no_weight=pool.no_weight,
+                long_reserve_atomic=pool.long_reserve_atomic + swap_input_atomic,
+                short_reserve_atomic=pool.short_reserve_atomic - cash_amount_atomic,
+                long_weight=pool.long_weight,
+                short_weight=pool.short_weight,
                 cash_backing_atomic=pool.cash_backing_atomic - cash_amount_atomic,
                 total_liquidity_atomic=pool.total_liquidity_atomic,
             )
 
         return cash_amount_atomic, share_amount_atomic, WeightedPoolState(
-            yes_reserve_atomic=pool.yes_reserve_atomic - cash_amount_atomic,
-            no_reserve_atomic=pool.no_reserve_atomic + swap_input_atomic,
-            yes_weight=pool.yes_weight,
-            no_weight=pool.no_weight,
+            long_reserve_atomic=pool.long_reserve_atomic - cash_amount_atomic,
+            short_reserve_atomic=pool.short_reserve_atomic + swap_input_atomic,
+            long_weight=pool.long_weight,
+            short_weight=pool.short_weight,
             cash_backing_atomic=pool.cash_backing_atomic - cash_amount_atomic,
             total_liquidity_atomic=pool.total_liquidity_atomic,
         )
@@ -1539,20 +1561,20 @@ class MarketStore:
             candidate_cash_out = (low_cash_out + high_cash_out) // 2
             if candidate_cash_out == 0:
                 required_share_amount = 0
-            elif outcome == "yes":
+            elif outcome == "long":
                 required_share_amount = candidate_cash_out + amount_in_given_out(
-                    reserve_in_atomic=pool.yes_reserve_atomic,
-                    reserve_out_atomic=pool.no_reserve_atomic,
-                    weight_in=pool.yes_weight,
-                    weight_out=pool.no_weight,
+                    reserve_in_atomic=pool.long_reserve_atomic,
+                    reserve_out_atomic=pool.short_reserve_atomic,
+                    weight_in=pool.long_weight,
+                    weight_out=pool.short_weight,
                     amount_out_atomic=candidate_cash_out,
                 )
             else:
                 required_share_amount = candidate_cash_out + amount_in_given_out(
-                    reserve_in_atomic=pool.no_reserve_atomic,
-                    reserve_out_atomic=pool.yes_reserve_atomic,
-                    weight_in=pool.no_weight,
-                    weight_out=pool.yes_weight,
+                    reserve_in_atomic=pool.short_reserve_atomic,
+                    reserve_out_atomic=pool.long_reserve_atomic,
+                    weight_in=pool.short_weight,
+                    weight_out=pool.long_weight,
                     amount_out_atomic=candidate_cash_out,
                 )
 
@@ -1595,23 +1617,29 @@ class MarketStore:
         pool = self._load_pool(connection, row["id"], required=False)
         latest_snapshot = self._latest_snapshot_row(connection, row["id"])
         latest_token_metrics = self._latest_token_metrics_row(connection, row["token_mint"])
-        yes_price_value = None if pool is None else yes_price(pool)
-        yes_price_usd = None if yes_price_value is None else format_decimal(yes_price_value)
-        no_price_usd = None if pool is None else format_decimal(no_price(pool))
+        long_price_value = None if pool is None else long_price(pool)
+        long_price_usd = None if long_price_value is None else format_decimal(long_price_value)
+        short_price_usd = None if pool is None else format_decimal(short_price(pool))
         starting_price = parse_decimal(row["starting_price_usd"])
-        threshold_price = parse_decimal(row["threshold_price_usd"])
-        current_observed_price = starting_price if latest_snapshot is None else parse_decimal(latest_snapshot["reference_price_usd"])
+        current_observed_price = None if latest_snapshot is None else parse_decimal(latest_snapshot["reference_price_usd"])
+        implied_price = None if long_price_value is None else self._implied_price_usd(long_price_value, row)
+        token_supply = (
+            None
+            if latest_token_metrics is None or latest_token_metrics["token_supply"] is None
+            else parse_decimal(latest_token_metrics["token_supply"])
+        )
+        current_market_cap = None if token_supply is None or current_observed_price is None else token_supply * current_observed_price
+        predicted_market_cap = None if token_supply is None or implied_price is None else token_supply * implied_price
+        predicted_nuke_fraction = (
+            None
+            if current_market_cap is None or predicted_market_cap is None or current_market_cap <= 0
+            else ONE - (predicted_market_cap / current_market_cap)
+        )
 
         return {
             "id": row["id"],
             "sequence_number": row["sequence_number"],
-            "question": self._market_prompt(
-                symbol=row["symbol"],
-                current_price_usd=current_observed_price,
-                threshold_price_usd=threshold_price,
-                expiry=row["expiry"],
-                created_at=row["created_at"],
-            ),
+            "question": self._market_prompt(symbol=row["symbol"], expiry=row["expiry"], created_at=row["created_at"]),
             "state": row["state"],
             "market_start": row["market_start"],
             "expiry": row["expiry"],
@@ -1619,38 +1647,35 @@ class MarketStore:
             "resolved_at": row["resolved_at"],
             "created_at": row["created_at"],
             "starting_price_usd": format_decimal(starting_price),
-            "threshold_price_usd": format_decimal(threshold_price),
-            "range_floor_price_usd": format_decimal(parse_decimal(row["range_floor_price_usd"])),
-            "range_ceiling_price_usd": format_decimal(parse_decimal(row["range_ceiling_price_usd"])),
+            "min_price_usd": format_decimal(parse_decimal(row["min_price_usd"])),
+            "max_price_usd": format_decimal(parse_decimal(row["max_price_usd"])),
             "is_frontend_visible": bool(row["is_frontend_visible"]),
             "superseded_by_market_id": row["superseded_by_market_id"],
             "superseded_at": row["superseded_at"],
-            "yes_price_usd": yes_price_usd,
-            "no_price_usd": no_price_usd,
-            "chance_of_outcome_percent": None if yes_price_value is None else self._chance_of_outcome_percent(yes_price_value),
-            "reference_price_usd": format_decimal(current_observed_price),
-            "remaining_drop_percent": self._remaining_drop_percent(current_observed_price, threshold_price),
-            "drop_to_nuke_fraction": format_decimal(self._remaining_drop_fraction(current_observed_price, threshold_price)),
+            "long_price_usd": long_price_usd,
+            "short_price_usd": short_price_usd,
+            "implied_price_usd": None if implied_price is None else format_decimal(implied_price),
+            "predicted_market_cap_usd": None if predicted_market_cap is None else format_decimal(predicted_market_cap),
+            "predicted_nuke_percent": None if predicted_nuke_fraction is None else self._format_percent(predicted_nuke_fraction),
+            "predicted_nuke_fraction": None if predicted_nuke_fraction is None else format_decimal(predicted_nuke_fraction),
+            "reference_price_usd": None if current_observed_price is None else format_decimal(current_observed_price),
             "total_liquidity_usdc": None if pool is None else format_usdc_amount(pool.total_liquidity_atomic),
             "pm_volume_24h_usdc": format_usdc_amount(pm_volume_24h_atomic),
             "underlying_volume_24h_usd": None
             if latest_token_metrics is None or latest_token_metrics["underlying_volume_h24_usd"] is None
             else format_decimal(parse_decimal(latest_token_metrics["underlying_volume_h24_usd"])),
-            "underlying_market_cap_usd": None
-            if latest_token_metrics is None or latest_token_metrics["underlying_market_cap_usd"] is None
-            else format_decimal(parse_decimal(latest_token_metrics["underlying_market_cap_usd"])),
+            "underlying_market_cap_usd": None if current_market_cap is None else format_decimal(current_market_cap),
+            "market_cap_kind": None if latest_token_metrics is None else latest_token_metrics["market_cap_kind"],
         }
 
     @staticmethod
-    def _chance_of_outcome_percent(yes_price_value: Decimal) -> str:
-        return f"{format_decimal(yes_price_value * Decimal('100'))}%"
+    def _format_percent(fraction: Decimal) -> str:
+        return f"{format_decimal((fraction * Decimal('100')).quantize(Decimal('0.01')))}%"
 
     def _market_prompt(
         self,
         *,
         symbol: str,
-        current_price_usd: Decimal,
-        threshold_price_usd: Decimal,
         expiry: str | None,
         created_at: str,
     ) -> str:
@@ -1659,19 +1684,7 @@ class MarketStore:
             if expiry is not None
             else (self._parse_timestamp(created_at) + self._market_duration).date().isoformat()
         )
-        return f"Will {symbol} nuke by {self._remaining_drop_percent(current_price_usd, threshold_price_usd)} by {deadline}?"
-
-    @staticmethod
-    def _remaining_drop_fraction(current_price_usd: Decimal, threshold_price_usd: Decimal) -> Decimal:
-        if current_price_usd <= 0:
-            return Decimal("0")
-        remaining_drop_fraction = ONE - (threshold_price_usd / current_price_usd)
-        return max(Decimal("0"), remaining_drop_fraction)
-
-    @classmethod
-    def _remaining_drop_percent(cls, current_price_usd: Decimal, threshold_price_usd: Decimal) -> str:
-        percent_value = cls._remaining_drop_fraction(current_price_usd, threshold_price_usd) * Decimal("100")
-        return f"{format_decimal(percent_value.quantize(Decimal('0.01')))}%"
+        return f"What will {symbol} trade at by {deadline}?"
 
     def _serialize_current_market_chart(self, connection: sqlite3.Connection, current_market: sqlite3.Row) -> dict:
         return {
@@ -1681,7 +1694,7 @@ class MarketStore:
                 {
                     "captured_at": row["captured_at"],
                     "underlying_price_usd": format_decimal(parse_decimal(row["underlying_price_usd"])),
-                    "chance_of_outcome_percent": format_decimal(parse_decimal(row["chance_of_outcome_percent"])),
+                    "implied_price_usd": format_decimal(parse_decimal(row["implied_price_usd"])),
                 }
                 for row in self._market_chart_rows(connection, current_market["id"])
             ],
@@ -1701,10 +1714,16 @@ class MarketStore:
     @staticmethod
     def _token_card_sort_key(token_card: dict, sort_by: str, *, descending: bool) -> tuple[int, Decimal]:
         current_market = token_card["current_market"]
-        if sort_by == "market_liquidity":
+        if sort_by == "predicted_nuke_percent":
+            value = current_market["predicted_nuke_fraction"]
+        elif sort_by == "implied_price":
+            value = current_market["implied_price_usd"]
+        elif sort_by == "expiry":
+            value = current_market["expiry"]
+        elif sort_by == "pm_volume":
+            value = current_market["pm_volume_24h_usdc"]
+        elif sort_by == "market_liquidity":
             value = current_market["total_liquidity_usdc"]
-        elif sort_by == "dump_percentage":
-            value = current_market["drop_to_nuke_fraction"]
         elif sort_by == "underlying_volume":
             value = current_market["underlying_volume_24h_usd"]
         elif sort_by == "underlying_market_cap":
@@ -1715,7 +1734,7 @@ class MarketStore:
         if value is None:
             return (1, Decimal("0"))
 
-        decimal_value = parse_decimal(value)
+        decimal_value = Decimal.from_float(MarketStore._parse_timestamp(value).timestamp()) if sort_by == "expiry" else parse_decimal(value)
         return (0, -decimal_value if descending else decimal_value)
 
     def _recent_activity(
@@ -1769,7 +1788,7 @@ class MarketStore:
             activity.append(
                 {
                     "timestamp": latest_snapshot["snapshot_hour"],
-                    "summary": f"Latest hourly token price is {format_usd_display(latest_snapshot['reference_price_usd'])}.",
+                    "summary": f"Latest hourly 24h-median token price is {format_usd_display(latest_snapshot['reference_price_usd'])}.",
                 }
             )
         elif current_market["state"] == "awaiting_liquidity":
@@ -1794,7 +1813,7 @@ class MarketStore:
                 {
                     "timestamp": latest_trade["created_at"],
                     "summary": (
-                        f"Latest trade was a {latest_trade['side']} of nuke exposure for "
+                        f"Latest trade was a {latest_trade['side']} of {latest_trade['outcome'].upper()} exposure for "
                         f"{format_usd_display(format_usdc_amount(latest_trade['cash_amount_atomic']))}."
                     ),
                 }
@@ -1813,15 +1832,15 @@ class MarketStore:
         return total_volume if has_volume else None
 
     @staticmethod
-    def _most_liquid_pair_with_market_cap(pairs: list[DexScreenerPair]) -> DexScreenerPair | None:
-        eligible_pairs = [pair for pair in pairs if pair.market_cap_usd is not None]
+    def _most_liquid_pair_with_price(pairs: list[DexScreenerPair]) -> DexScreenerPair | None:
+        eligible_pairs = [pair for pair in pairs if pair.price_usd is not None]
         if not eligible_pairs:
             return None
         return max(eligible_pairs, key=lambda pair: pair.liquidity_usd or Decimal("0"))
 
     @staticmethod
-    def _most_liquid_pair_with_price(pairs: list[DexScreenerPair]) -> DexScreenerPair | None:
-        eligible_pairs = [pair for pair in pairs if pair.price_usd is not None]
+    def _most_liquid_pair_with_supply(pairs: list[DexScreenerPair]) -> DexScreenerPair | None:
+        eligible_pairs = [pair for pair in pairs if pair.token_supply is not None and pair.token_supply > 0]
         if not eligible_pairs:
             return None
         return max(eligible_pairs, key=lambda pair: pair.liquidity_usd or Decimal("0"))
@@ -1883,9 +1902,10 @@ class MarketStore:
             [token_mint],
         ).fetchone()["next_sequence_number"]
         expiry = (self._parse_timestamp(created_at) + self._market_duration).isoformat()
-        threshold_price_usd = starting_price_usd * self._resolution_threshold_fraction
-        range_floor_price_usd = starting_price_usd * self._rollover_lower_bound_fraction
-        range_ceiling_price_usd = starting_price_usd * self._rollover_upper_bound_fraction
+        if starting_price_usd <= 0:
+            raise ValueError("Market starting price must be positive.")
+        min_price_usd = starting_price_usd / self._market_price_range_multiple
+        max_price_usd = starting_price_usd * self._market_price_range_multiple
 
         if is_frontend_visible:
             connection.execute(
@@ -1911,16 +1931,15 @@ class MarketStore:
                 liquidity_deposit_address,
                 resolved_at,
                 starting_price_usd,
-                threshold_price_usd,
-                range_floor_price_usd,
-                range_ceiling_price_usd,
+                min_price_usd,
+                max_price_usd,
                 is_frontend_visible,
                 superseded_by_market_id,
                 superseded_at,
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, 'awaiting_liquidity', NULL, ?, NULL, NULL, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+            VALUES (?, ?, ?, 'awaiting_liquidity', NULL, ?, NULL, NULL, ?, ?, ?, ?, NULL, NULL, ?, ?)
             RETURNING id
             """,
             [
@@ -1929,9 +1948,8 @@ class MarketStore:
                 seed_market_question(symbol),
                 expiry,
                 format_decimal(starting_price_usd),
-                format_decimal(threshold_price_usd),
-                format_decimal(range_floor_price_usd),
-                format_decimal(range_ceiling_price_usd),
+                format_decimal(min_price_usd),
+                format_decimal(max_price_usd),
                 1 if is_frontend_visible else 0,
                 created_at,
                 created_at,
@@ -1954,6 +1972,7 @@ class MarketStore:
             starting_price_usd=starting_price_usd,
             is_frontend_visible=True,
         )
+        self._transfer_rollover_liquidity(connection, old_market_id=market_row["id"], new_market_id=successor_market_id, updated_at=created_at)
         connection.execute(
             """
             UPDATE markets
@@ -1964,10 +1983,101 @@ class MarketStore:
         )
         return successor_market_id
 
+    def _snapshot_touches_rollover_boundary(self, reference_price: Decimal, market_row: sqlite3.Row) -> bool:
+        long_rate = self._long_rate_for_price(reference_price, market_row)
+        return long_rate >= self._market_rollover_boundary_rate or long_rate <= ONE - self._market_rollover_boundary_rate
+
     @staticmethod
-    def _price_outside_rollover_range(reference_price: Decimal, market_row: sqlite3.Row) -> bool:
-        return reference_price < parse_decimal(market_row["range_floor_price_usd"]) or reference_price > parse_decimal(
-            market_row["range_ceiling_price_usd"]
+    def _long_rate_for_price(price_usd: Decimal, market_row: sqlite3.Row) -> Decimal:
+        min_price = parse_decimal(market_row["min_price_usd"])
+        max_price = parse_decimal(market_row["max_price_usd"])
+        if min_price <= 0 or max_price <= min_price:
+            raise ValueError("Market scalar price bounds are invalid.")
+        if price_usd <= min_price:
+            return Decimal("0")
+        if price_usd >= max_price:
+            return ONE
+        return (price_usd.ln() - min_price.ln()) / (max_price.ln() - min_price.ln())
+
+    @staticmethod
+    def _implied_price_usd(long_price_value: Decimal, market_row: sqlite3.Row) -> Decimal:
+        min_price = parse_decimal(market_row["min_price_usd"])
+        max_price = parse_decimal(market_row["max_price_usd"])
+        if min_price <= 0 or max_price <= min_price:
+            raise ValueError("Market scalar price bounds are invalid.")
+        bounded_long_price = min(ONE, max(Decimal("0"), long_price_value))
+        return (min_price.ln() + bounded_long_price * (max_price.ln() - min_price.ln())).exp()
+
+    def _transfer_rollover_liquidity(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        old_market_id: int,
+        new_market_id: int,
+        updated_at: str,
+    ) -> None:
+        old_pool = self._load_pool(connection, old_market_id, required=False)
+        if old_pool is None or self._market_rollover_liquidity_transfer_fraction == 0:
+            return
+
+        # Only matched LONG/SHORT units are complete neutral AMM-owned sets; one-sided excess stays with the old market.
+        transfer_atomic = int(
+            (
+                Decimal(min(old_pool.long_reserve_atomic, old_pool.short_reserve_atomic))
+                * self._market_rollover_liquidity_transfer_fraction
+            ).to_integral_value(rounding=ROUND_DOWN)
+        )
+        if transfer_atomic <= 0:
+            return
+        if transfer_atomic > old_pool.cash_backing_atomic or transfer_atomic > old_pool.total_liquidity_atomic:
+            raise RuntimeError(f"Market {old_market_id} cannot transfer more liquidity than it owns.")
+
+        preserved_old_long_price = long_price(old_pool)
+        old_long_reserve = old_pool.long_reserve_atomic - transfer_atomic
+        old_short_reserve = old_pool.short_reserve_atomic - transfer_atomic
+        old_long_weight, old_short_weight = weights_for_price(
+            long_reserve_atomic=old_long_reserve,
+            short_reserve_atomic=old_short_reserve,
+            long_price=preserved_old_long_price,
+        )
+        self._update_pool(
+            connection,
+            old_market_id,
+            WeightedPoolState(
+                long_reserve_atomic=old_long_reserve,
+                short_reserve_atomic=old_short_reserve,
+                long_weight=old_long_weight,
+                short_weight=old_short_weight,
+                cash_backing_atomic=old_pool.cash_backing_atomic - transfer_atomic,
+                total_liquidity_atomic=old_pool.total_liquidity_atomic - transfer_atomic,
+            ),
+            updated_at,
+        )
+
+        connection.execute(
+            """
+            INSERT INTO market_pools (
+                market_id,
+                long_reserve_atomic,
+                short_reserve_atomic,
+                long_weight,
+                short_weight,
+                cash_backing_atomic,
+                total_liquidity_atomic,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, '0.5', '0.5', ?, ?, ?, ?)
+            """,
+            [new_market_id, transfer_atomic, transfer_atomic, transfer_atomic, transfer_atomic, updated_at, updated_at],
+        )
+        connection.execute(
+            """
+            UPDATE markets
+            SET state = 'open', market_start = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            [updated_at, updated_at, new_market_id],
         )
 
     @staticmethod
@@ -2013,7 +2123,7 @@ class MarketStore:
     def _market_chart_rows(connection: sqlite3.Connection, market_id: int) -> list[sqlite3.Row]:
         return connection.execute(
             """
-            SELECT captured_at, underlying_price_usd, chance_of_outcome_percent
+            SELECT captured_at, underlying_price_usd, implied_price_usd
             FROM market_chart_snapshots
             WHERE market_id = ?
             ORDER BY captured_at ASC
@@ -2057,10 +2167,10 @@ class MarketStore:
                 raise ValueError("Market has no active pool.")
             return None
         return WeightedPoolState(
-            yes_reserve_atomic=row["yes_reserve_atomic"],
-            no_reserve_atomic=row["no_reserve_atomic"],
-            yes_weight=parse_decimal(row["yes_weight"]),
-            no_weight=parse_decimal(row["no_weight"]),
+            long_reserve_atomic=row["long_reserve_atomic"],
+            short_reserve_atomic=row["short_reserve_atomic"],
+            long_weight=parse_decimal(row["long_weight"]),
+            short_weight=parse_decimal(row["short_weight"]),
             cash_backing_atomic=row["cash_backing_atomic"],
             total_liquidity_atomic=row["total_liquidity_atomic"],
         )
@@ -2085,10 +2195,10 @@ class MarketStore:
                 """
                 INSERT INTO market_pools (
                     market_id,
-                    yes_reserve_atomic,
-                    no_reserve_atomic,
-                    yes_weight,
-                    no_weight,
+                    long_reserve_atomic,
+                    short_reserve_atomic,
+                    long_weight,
+                    short_weight,
                     cash_backing_atomic,
                     total_liquidity_atomic,
                     created_at,
@@ -2108,21 +2218,21 @@ class MarketStore:
             )
             return Decimal("0.5")
 
-        preserved_yes_price = yes_price(pool)
-        updated_yes_weight, updated_no_weight = retuned_weights_for_equal_liquidity(
-            yes_reserve_atomic=pool.yes_reserve_atomic,
-            no_reserve_atomic=pool.no_reserve_atomic,
+        preserved_long_price = long_price(pool)
+        updated_long_weight, updated_short_weight = retuned_weights_for_equal_liquidity(
+            long_reserve_atomic=pool.long_reserve_atomic,
+            short_reserve_atomic=pool.short_reserve_atomic,
             equal_liquidity_atomic=amount_atomic,
-            preserved_yes_price=preserved_yes_price,
+            preserved_long_price=preserved_long_price,
         )
         connection.execute(
             """
             UPDATE market_pools
             SET
-                yes_reserve_atomic = yes_reserve_atomic + ?,
-                no_reserve_atomic = no_reserve_atomic + ?,
-                yes_weight = ?,
-                no_weight = ?,
+                long_reserve_atomic = long_reserve_atomic + ?,
+                short_reserve_atomic = short_reserve_atomic + ?,
+                long_weight = ?,
+                short_weight = ?,
                 cash_backing_atomic = cash_backing_atomic + ?,
                 total_liquidity_atomic = total_liquidity_atomic + ?,
                 updated_at = ?
@@ -2131,15 +2241,15 @@ class MarketStore:
             [
                 amount_atomic,
                 amount_atomic,
-                str(updated_yes_weight),
-                str(updated_no_weight),
+                str(updated_long_weight),
+                str(updated_short_weight),
                 amount_atomic,
                 amount_atomic,
                 credited_at,
                 market_id,
             ],
         )
-        return preserved_yes_price
+        return preserved_long_price
 
     @staticmethod
     def _update_pool(
@@ -2152,20 +2262,20 @@ class MarketStore:
             """
             UPDATE market_pools
             SET
-                yes_reserve_atomic = ?,
-                no_reserve_atomic = ?,
-                yes_weight = ?,
-                no_weight = ?,
+                long_reserve_atomic = ?,
+                short_reserve_atomic = ?,
+                long_weight = ?,
+                short_weight = ?,
                 cash_backing_atomic = ?,
                 total_liquidity_atomic = ?,
                 updated_at = ?
             WHERE market_id = ?
             """,
             [
-                pool.yes_reserve_atomic,
-                pool.no_reserve_atomic,
-                str(pool.yes_weight),
-                str(pool.no_weight),
+                pool.long_reserve_atomic,
+                pool.short_reserve_atomic,
+                str(pool.long_weight),
+                str(pool.short_weight),
                 pool.cash_backing_atomic,
                 pool.total_liquidity_atomic,
                 updated_at,
@@ -2236,8 +2346,8 @@ class MarketStore:
             INSERT INTO market_positions (
                 user_id,
                 market_id,
-                yes_shares_atomic,
-                no_shares_atomic,
+                long_shares_atomic,
+                short_shares_atomic,
                 created_at,
                 updated_at
             )
@@ -2246,7 +2356,7 @@ class MarketStore:
             """,
             [user_id, market_id, timestamp, timestamp],
         )
-        column = "yes_shares_atomic" if outcome == "yes" else "no_shares_atomic"
+        column = "long_shares_atomic" if outcome == "long" else "short_shares_atomic"
         connection.execute(
             f"""
             UPDATE market_positions
@@ -2264,7 +2374,7 @@ class MarketStore:
         outcome: str,
         required_shares_atomic: int,
     ) -> None:
-        column = "yes_shares_atomic" if outcome == "yes" else "no_shares_atomic"
+        column = "long_shares_atomic" if outcome == "long" else "short_shares_atomic"
         row = connection.execute(
             f"""
             SELECT {column} AS shares_atomic
@@ -2335,205 +2445,87 @@ class MarketStore:
             return
         connection.execute(f"ALTER TABLE markets ADD COLUMN {column_name} {column_definition}")
 
-    def _migrate_legacy_markets(self, connection: sqlite3.Connection) -> None:
-        legacy_rows = connection.execute(
-            """
-            SELECT markets.id, markets.token_mint, markets.state, markets.market_start, markets.liquidity_deposit_address, markets.created_at, markets.expiry, tokens.symbol
-            FROM markets
-            JOIN tokens ON tokens.mint = markets.token_mint
-            WHERE starting_price_usd IS NULL
-               OR threshold_price_usd IS NULL
-               OR range_floor_price_usd IS NULL
-               OR range_ceiling_price_usd IS NULL
-               OR expiry IS NULL
-            ORDER BY id ASC
-            """
-        ).fetchall()
-        migrated_count = 0
-        parked_count = 0
-        pruned_count = 0
-        for row in legacy_rows:
-            starting_price_usd = self._legacy_market_starting_price(connection, row)
-            if starting_price_usd is None:
-                if self._legacy_market_can_be_pruned(connection, row):
-                    connection.execute("DELETE FROM markets WHERE id = ?", [row["id"]])
-                    pruned_count += 1
-                    continue
-                if self._legacy_market_can_be_parked(connection, row):
-                    connection.execute(
-                        """
-                        UPDATE markets
-                        SET question = ?, is_frontend_visible = 0, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        [seed_market_question(row["symbol"]), utc_now(), row["id"]],
-                    )
-                    parked_count += 1
-                    continue
-                raise RuntimeError(
-                    "Cannot migrate legacy market "
-                    f"{row['id']} for {row['symbol']} without a real observed price. "
-                    "Refusing to regenerate a new market id because that would change the existing liquidity deposit address."
-                )
+    @staticmethod
+    def _ensure_table_column(connection: sqlite3.Connection, table_name: str, column_name: str, column_definition: str) -> None:
+        columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()}
+        if column_name in columns:
+            return
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
-            expiry = row["expiry"] or (self._parse_timestamp(row["created_at"]) + self._market_duration).isoformat()
+    @staticmethod
+    def _has_legacy_binary_market_schema(connection: sqlite3.Connection) -> bool:
+        table_columns = {
+            table_name: {row["name"] for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()}
+            for table_name in ("market_pools", "market_positions", "market_trades", "market_chart_snapshots", "markets")
+        }
+        return (
+            "yes_reserve_atomic" in table_columns["market_pools"]
+            or "yes_shares_atomic" in table_columns["market_positions"]
+            or "before_yes_price" in table_columns["market_trades"]
+            or "chance_of_outcome_percent" in table_columns["market_chart_snapshots"]
+            or (
+                ("threshold_price_usd" in table_columns["markets"] or "min_price_usd" not in table_columns["markets"])
+                and MarketStore._table_exists(connection, "markets")
+                and connection.execute("SELECT 1 FROM markets LIMIT 1").fetchone() is not None
+                and MarketStore._metadata_value(connection, "scalar_long_short_reset") is None
+            )
+        )
+
+    @staticmethod
+    def _reset_legacy_binary_market_state(connection: sqlite3.Connection) -> None:
+        logger.warning("Resetting legacy binary market state before scalar LONG/SHORT schema initialization.")
+        if MarketStore._table_exists(connection, "ledger_entries"):
             connection.execute(
                 """
-                UPDATE markets
-                SET
-                    question = ?,
-                    starting_price_usd = ?,
-                    threshold_price_usd = ?,
-                    range_floor_price_usd = ?,
-                    range_ceiling_price_usd = ?,
-                    expiry = ?,
-                    updated_at = ?
-                WHERE id = ?
-                """,
-                [
-                    seed_market_question(row["symbol"]),
-                    format_decimal(starting_price_usd),
-                    format_decimal(starting_price_usd * self._resolution_threshold_fraction),
-                    format_decimal(starting_price_usd * self._rollover_lower_bound_fraction),
-                    format_decimal(starting_price_usd * self._rollover_upper_bound_fraction),
-                    expiry,
-                    utc_now(),
-                    row["id"],
-                ],
+                DELETE FROM ledger_entries
+                WHERE entry_type = 'market_payout'
+                   OR entry_type LIKE 'market_buy_%'
+                   OR entry_type LIKE 'market_sell_%'
+                """
             )
-            migrated_count += 1
-        if migrated_count or parked_count or pruned_count:
-            logger.info(
-                "Migrated {} legacy markets in place, parked {} address-preserving legacy markets, and pruned {} dead legacy markets.",
-                migrated_count,
-                parked_count,
-                pruned_count,
-            )
-
-    @staticmethod
-    def _legacy_market_starting_price(connection: sqlite3.Connection, row: sqlite3.Row) -> Decimal | None:
-        observed_price_row = connection.execute(
-            """
-            SELECT reference_price_usd AS observed_price_usd
-            FROM market_snapshots
-            WHERE market_id = ?
-            ORDER BY snapshot_hour ASC
-            LIMIT 1
-            """,
-            [row["id"]],
-        ).fetchone()
-        if observed_price_row is not None and observed_price_row["observed_price_usd"] is not None:
-            return parse_decimal(observed_price_row["observed_price_usd"])
-
-        observed_price_row = connection.execute(
-            """
-            SELECT source_price_usd AS observed_price_usd
-            FROM token_metrics_snapshots
-            WHERE token_mint = ?
-              AND source_price_usd IS NOT NULL
-              AND captured_at >= ?
-            ORDER BY captured_at ASC
-            LIMIT 1
-            """,
-            [row["token_mint"], row["created_at"]],
-        ).fetchone()
-        if observed_price_row is None or observed_price_row["observed_price_usd"] is None:
-            return None
-        return parse_decimal(observed_price_row["observed_price_usd"])
-
-    @staticmethod
-    def _legacy_market_can_be_pruned(connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
-        if row["state"] != "awaiting_liquidity" or row["market_start"] is not None or row["liquidity_deposit_address"] is not None:
-            return False
-        return MarketStore._legacy_market_has_no_attached_state(connection, row["id"])
-
-    @staticmethod
-    def _legacy_market_can_be_parked(connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
-        if row["state"] != "awaiting_liquidity" or row["market_start"] is not None or row["liquidity_deposit_address"] is None:
-            return False
-        return MarketStore._legacy_market_has_no_attached_state(connection, row["id"], allow_liquidity_account=True)
-
-    @staticmethod
-    def _legacy_market_has_no_attached_state(
-        connection: sqlite3.Connection,
-        market_id: int,
-        *,
-        allow_liquidity_account: bool = False,
-    ) -> bool:
         for table_name in (
-            "market_liquidity_accounts",
-            "market_liquidity_deposits",
-            "market_liquidity_seed_events",
-            "market_pools",
-            "market_positions",
-            "market_trades",
-            "market_pair_snapshots",
-            "market_snapshots",
-            "market_chart_snapshots",
-            "market_payouts",
             "market_revenue_sweeps",
+            "market_payouts",
+            "market_chart_snapshots",
+            "market_snapshots",
+            "market_pair_snapshots",
+            "market_trades",
+            "market_positions",
+            "market_liquidity_seed_events",
+            "market_liquidity_deposits",
+            "market_liquidity_accounts",
+            "market_pools",
+            "token_metrics_snapshots",
         ):
-            if allow_liquidity_account and table_name == "market_liquidity_accounts":
-                continue
-            if connection.execute(f"SELECT 1 FROM {table_name} WHERE market_id = ? LIMIT 1", [market_id]).fetchone() is not None:
-                return False
-        return True
-
-    @staticmethod
-    def _parked_market_row(connection: sqlite3.Connection, token_mint: str) -> sqlite3.Row | None:
-        return connection.execute(
-            """
-            SELECT *
-            FROM markets
-            WHERE token_mint = ?
-              AND is_frontend_visible = 0
-              AND state = 'awaiting_liquidity'
-              AND starting_price_usd IS NULL
-            ORDER BY sequence_number DESC, id DESC
-            LIMIT 1
-            """,
-            [token_mint],
-        ).fetchone()
-
-    def _activate_parked_market(
-        self,
-        connection: sqlite3.Connection,
-        *,
-        market_id: int,
-        symbol: str,
-        activated_at: str,
-        starting_price_usd: Decimal,
-    ) -> None:
-        expiry = (self._parse_timestamp(activated_at) + self._market_duration).isoformat()
+            connection.execute(f"DROP TABLE IF EXISTS {table_name}")
+        if MarketStore._table_exists(connection, "treasury_debt_entries"):
+            connection.execute("DELETE FROM treasury_debt_entries WHERE market_id IS NOT NULL OR entry_type = 'weekly_market_seed'")
+        connection.execute("DELETE FROM markets")
         connection.execute(
             """
-            UPDATE markets
-            SET
-                question = ?,
-                starting_price_usd = ?,
-                threshold_price_usd = ?,
-                range_floor_price_usd = ?,
-                range_ceiling_price_usd = ?,
-                is_frontend_visible = 1,
-                superseded_by_market_id = NULL,
-                superseded_at = NULL,
-                created_at = ?,
-                expiry = ?,
-                updated_at = ?
-            WHERE id = ?
+            INSERT INTO app_metadata (key, value)
+            VALUES ('scalar_long_short_reset', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
             """,
-            [
-                seed_market_question(symbol),
-                format_decimal(starting_price_usd),
-                format_decimal(starting_price_usd * self._resolution_threshold_fraction),
-                format_decimal(starting_price_usd * self._rollover_lower_bound_fraction),
-                format_decimal(starting_price_usd * self._rollover_upper_bound_fraction),
-                activated_at,
-                expiry,
-                activated_at,
-                market_id,
-            ],
+            [utc_now()],
         )
+
+    @staticmethod
+    def _table_exists(connection: sqlite3.Connection, table_name: str) -> bool:
+        return (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                [table_name],
+            ).fetchone()
+            is not None
+        )
+
+    @staticmethod
+    def _metadata_value(connection: sqlite3.Connection, key: str) -> str | None:
+        if not MarketStore._table_exists(connection, "app_metadata"):
+            return None
+        row = connection.execute("SELECT value FROM app_metadata WHERE key = ?", [key]).fetchone()
+        return None if row is None else row["value"]
 
     @staticmethod
     def _outstanding_treasury_debt_atomic(connection: sqlite3.Connection) -> int:

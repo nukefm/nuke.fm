@@ -19,9 +19,9 @@ class Settings:
     frontend_refresh_seconds: int
     api_challenge_ttl_seconds: int
     market_duration_days: int
-    market_resolution_threshold_fraction: str
-    market_rollover_lower_bound_fraction: str
-    market_rollover_upper_bound_fraction: str
+    market_price_range_multiple: str
+    market_rollover_boundary_rate: str
+    market_rollover_liquidity_transfer_fraction: str
     solana_rpc_url: str
     solana_usdc_mint: str
     secret_tool_service: str
@@ -42,9 +42,9 @@ def load_settings() -> Settings:
         frontend_refresh_seconds=config["frontend_refresh_seconds"],
         api_challenge_ttl_seconds=config["api_challenge_ttl_seconds"],
         market_duration_days=config["market_duration_days"],
-        market_resolution_threshold_fraction=config["market_resolution_threshold_fraction"],
-        market_rollover_lower_bound_fraction=config["market_rollover_lower_bound_fraction"],
-        market_rollover_upper_bound_fraction=config["market_rollover_upper_bound_fraction"],
+        market_price_range_multiple=config["market_price_range_multiple"],
+        market_rollover_boundary_rate=config["market_rollover_boundary_rate"],
+        market_rollover_liquidity_transfer_fraction=config["market_rollover_liquidity_transfer_fraction"],
         jupiter_gems_base_url=config.get("jupiter_gems_base_url", "https://datapi.jup.ag/v1").rstrip("/"),
         jupiter_tokens_base_url=config.get("jupiter_tokens_base_url", "https://api.jup.ag/tokens/v2").rstrip("/"),
         solana_rpc_url=config["solana_rpc_url"],

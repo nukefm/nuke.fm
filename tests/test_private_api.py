@@ -122,9 +122,9 @@ def _make_settings(tmp_path: Path) -> Settings:
         frontend_refresh_seconds=30,
         api_challenge_ttl_seconds=300,
         market_duration_days=90,
-        market_resolution_threshold_fraction="0.10",
-        market_rollover_lower_bound_fraction="0.25",
-        market_rollover_upper_bound_fraction="4.0",
+        market_price_range_multiple="10",
+        market_rollover_boundary_rate="0.85",
+        market_rollover_liquidity_transfer_fraction="0.80",
         solana_rpc_url="https://api.mainnet-beta.solana.com",
         solana_usdc_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         secret_tool_service="nuke.fm",
@@ -228,7 +228,7 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     buy_quote_response = client.post(
         "/v1/private/trades/quote",
         headers=headers,
-        json={"market_id": market_id, "outcome": "yes", "side": "buy", "amount_usdc": "3"},
+        json={"market_id": market_id, "outcome": "long", "side": "buy", "amount_usdc": "3"},
     )
     assert buy_quote_response.status_code == 200
     assert buy_quote_response.json()["share_amount"] != "0"
@@ -236,19 +236,19 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     buy_trade_response = client.post(
         "/v1/private/trades",
         headers=headers,
-        json={"market_id": market_id, "outcome": "yes", "side": "buy", "amount_usdc": "3"},
+        json={"market_id": market_id, "outcome": "long", "side": "buy", "amount_usdc": "3"},
     )
     assert buy_trade_response.status_code == 200
     assert buy_trade_response.json()["amount_usdc"] == "3"
 
     positions_response = client.get("/v1/private/account/positions", headers=headers)
     assert positions_response.status_code == 200
-    assert positions_response.json()["positions"][0]["yes_shares"] != "0"
+    assert positions_response.json()["positions"][0]["long_shares"] != "0"
 
     sell_quote_response = client.post(
         "/v1/private/trades/quote",
         headers=headers,
-        json={"market_id": market_id, "outcome": "yes", "side": "sell", "share_amount": "1"},
+        json={"market_id": market_id, "outcome": "long", "side": "sell", "share_amount": "1"},
     )
     assert sell_quote_response.status_code == 200
     assert sell_quote_response.json()["amount_usdc"] != "0"
@@ -257,7 +257,7 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     sell_trade_response = client.post(
         "/v1/private/trades",
         headers=headers,
-        json={"market_id": market_id, "outcome": "yes", "side": "sell", "share_amount": "1"},
+        json={"market_id": market_id, "outcome": "long", "side": "sell", "share_amount": "1"},
     )
     assert sell_trade_response.status_code == 200
     assert sell_trade_response.json()["amount_usdc"] != "0"

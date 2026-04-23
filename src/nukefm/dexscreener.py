@@ -13,6 +13,8 @@ class DexScreenerPair:
     liquidity_usd: Decimal | None
     volume_h24_usd: Decimal | None
     market_cap_usd: Decimal | None
+    token_supply: Decimal | None = None
+    market_cap_kind: str | None = None
 
 
 class DexScreenerPairClient(Protocol):

@@ -27,7 +27,22 @@ class FakeDexScreenerClient:
         self._pairs_by_mint = pairs_by_mint
 
     def list_token_pairs(self, token_mint: str) -> list[DexScreenerPair]:
-        return self._pairs_by_mint[token_mint]
+        return [self._with_supply(pair) for pair in self._pairs_by_mint[token_mint]]
+
+    @staticmethod
+    def _with_supply(pair: DexScreenerPair) -> DexScreenerPair:
+        if pair.token_supply is not None or pair.market_cap_usd is None or pair.price_usd is None:
+            return pair
+        return DexScreenerPair(
+            pair_address=pair.pair_address,
+            dex_id=pair.dex_id,
+            price_usd=pair.price_usd,
+            liquidity_usd=pair.liquidity_usd,
+            volume_h24_usd=pair.volume_h24_usd,
+            market_cap_usd=None,
+            token_supply=pair.market_cap_usd / pair.price_usd,
+            market_cap_kind="circulating",
+        )
 
 
 def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
@@ -42,9 +57,9 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
         frontend_refresh_seconds=30,
         api_challenge_ttl_seconds=300,
         market_duration_days=90,
-        market_resolution_threshold_fraction="0.10",
-        market_rollover_lower_bound_fraction="0.25",
-        market_rollover_upper_bound_fraction="4.0",
+        market_price_range_multiple="10",
+        market_rollover_boundary_rate="0.85",
+        market_rollover_liquidity_transfer_fraction="0.80",
         solana_rpc_url="https://api.mainnet-beta.solana.com",
         solana_usdc_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         secret_tool_service="nuke.fm",
@@ -148,23 +163,15 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
                 snapshot_hour,
                 reference_price_usd,
                 pair_count,
-                ath_price_usd,
-                ath_timestamp,
-                drawdown_fraction,
-                threshold_price_usd,
                 captured_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             """,
             [
                 gamma_market_id,
                 "2026-04-15T13:00:00+00:00",
                 "0.000000000123",
                 1,
-                "0.000000000987",
-                "2026-04-15T13:00:00+00:00",
-                "0.75",
-                "0.000000000045",
                 "2026-04-15T13:00:00+00:00",
             ],
         )
@@ -176,12 +183,14 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
                 pair_count,
                 underlying_volume_h24_usd,
                 underlying_market_cap_usd,
+                token_supply,
+                market_cap_kind,
                 source_pair_address,
                 source_dex_id,
                 source_price_usd,
                 source_liquidity_usd
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 "Mint333",
@@ -189,6 +198,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
                 1,
                 "0.000000000654",
                 "0.000000000321",
+                "2.609756097560975609756097561",
+                "circulating",
                 "pair-1",
                 "dex-1",
                 "0.000000000123",
@@ -201,13 +212,13 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
                 market_id,
                 captured_at,
                 underlying_price_usd,
-                chance_of_outcome_percent
+                implied_price_usd
             )
             VALUES (?, ?, ?, ?)
             """,
             [
-                [gamma_market_id, "2026-04-15T13:05:00+00:00", "0.000000000123", "50"],
-                [gamma_market_id, "2026-04-15T13:10:00+00:00", "0.000000000140", "61.25"],
+                [gamma_market_id, "2026-04-15T13:05:00+00:00", "0.000000000123", "0.00000000045"],
+                [gamma_market_id, "2026-04-15T13:10:00+00:00", "0.000000000140", "0.00000000055"],
             ],
         )
 
@@ -225,10 +236,10 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
                 side,
                 cash_amount_atomic,
                 share_amount_atomic,
-                before_yes_price,
-                before_no_price,
-                after_yes_price,
-                after_no_price,
+                before_long_price,
+                before_short_price,
+                after_long_price,
+                after_short_price,
                 created_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -236,7 +247,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
             [
                 trader["id"],
                 gamma_market_id,
-                "yes",
+                "long",
                 "buy",
                 1_000_000,
                 1_000_000,
@@ -257,7 +268,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     gamma_token = next(token for token in token_response.json()["tokens"] if token["symbol"] == "GAMMA")
     assert gamma_token["current_market"]["liquidity_deposit_address"] == "market-deposit-2"
     assert gamma_token["current_market"]["pm_volume_24h_usdc"] == "1"
-    assert gamma_token["current_market"]["chance_of_outcome_percent"] == "50%"
+    assert gamma_token["current_market"]["implied_price_usd"] == "0.00000000045"
 
     sorted_token_response = client.get("/v1/public/tokens?sort_by=market_liquidity&sort_direction=desc")
     assert sorted_token_response.status_code == 200
@@ -274,7 +285,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "PM volume" in page_response.text
     assert "Underlying volume" in page_response.text
     assert "Underlying mktcap" in page_response.text
-    assert "63.41% from current price" in page_response.text
+    assert "Implied price" in page_response.text
     assert page_response.text.index("<span>ALPHA</span>") < page_response.text.index("<span>GAMMA</span>")
     assert "Scan which token markets are actionable right now." not in page_response.text
     assert "OMEGA" not in page_response.text
@@ -289,12 +300,12 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert detail_api_response.status_code == 200
     detail_api_market = detail_api_response.json()["current_market"]
     assert detail_api_market["reference_price_usd"] == "0.000000000123"
-    assert detail_api_market["threshold_price_usd"] == "0.000000000045"
+    assert detail_api_market["min_price_usd"] == "0.000000000045"
     assert detail_api_market["underlying_market_cap_usd"] == "0.000000000321"
     assert detail_api_market["pm_volume_24h_usdc"] == "1"
-    assert detail_api_market["chance_of_outcome_percent"] == "50%"
-    assert detail_api_market["remaining_drop_percent"] == "63.41%"
-    assert detail_api_market["question"] == "Will GAMMA nuke by 63.41% by 2026-07-14?"
+    assert detail_api_market["implied_price_usd"] == "0.00000000045"
+    assert detail_api_market["predicted_nuke_percent"] == "-265.85%"
+    assert detail_api_market["question"] == "What will GAMMA trade at by 2026-07-14?"
     assert detail_api_response.json()["hidden_active_markets"] == []
     assert detail_api_response.json()["current_market_chart"] == {
         "market_id": gamma_market_id,
@@ -303,33 +314,30 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
             {
                 "captured_at": "2026-04-15T13:05:00+00:00",
                 "underlying_price_usd": "0.000000000123",
-                "chance_of_outcome_percent": "50",
+                "implied_price_usd": "0.00000000045",
             },
             {
                 "captured_at": "2026-04-15T13:10:00+00:00",
                 "underlying_price_usd": "0.00000000014",
-                "chance_of_outcome_percent": "61.25",
+                "implied_price_usd": "0.00000000055",
             },
         ],
     }
 
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
-    assert "Will GAMMA nuke by 63.41% by 2026-07-14?" in detail_response.text
+    assert "What will GAMMA trade at by 2026-07-14?" in detail_response.text
     assert "PM 24h volume" in detail_response.text
-    assert "Chance of nuke" in detail_response.text
-    assert "Token price vs chance of nuke" in detail_response.text
+    assert "Implied price" in detail_response.text
+    assert "Token price vs implied price" in detail_response.text
     assert "snapshot-market-charts" not in detail_response.text
     assert "token-overlay-chart" in detail_response.text
     assert "cdn.jsdelivr.net/npm/chart.js" in detail_response.text
-    assert '"chance_of_outcome_percent": "61.25"' in detail_response.text
-    assert '<p class="decision-value">50%</p>' in detail_response.text
-    assert "$0.000000000123" in detail_response.text
-    assert "$0.000000000321" in detail_response.text
-    assert "Latest trade was a buy of nuke exposure for $1." in detail_response.text
-    assert "YES Price" not in detail_response.text
-    assert "NO Price" not in detail_response.text
-    assert "YES and NO skew" not in detail_response.text
+    assert '"implied_price_usd": "0.00000000055"' in detail_response.text
+    assert '<p class="decision-value">$0.00000000045</p>' in detail_response.text
+    assert "LONG Price" not in detail_response.text
+    assert "SHORT Price" not in detail_response.text
+    assert "LONG and SHORT skew" not in detail_response.text
 
     no_history_detail_response = client.get("/tokens/Mint111")
     assert no_history_detail_response.status_code == 200
@@ -351,9 +359,9 @@ def test_board_toggle_stays_visible_when_all_markets_are_uninitialized(tmp_path:
         frontend_refresh_seconds=30,
         api_challenge_ttl_seconds=300,
         market_duration_days=90,
-        market_resolution_threshold_fraction="0.10",
-        market_rollover_lower_bound_fraction="0.25",
-        market_rollover_upper_bound_fraction="4.0",
+        market_price_range_multiple="10",
+        market_rollover_boundary_rate="0.85",
+        market_rollover_liquidity_transfer_fraction="0.80",
         solana_rpc_url="https://api.mainnet-beta.solana.com",
         solana_usdc_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         secret_tool_service="nuke.fm",

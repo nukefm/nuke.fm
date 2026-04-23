@@ -41,7 +41,7 @@ def test_jupiter_gems_client_parses_and_dedupes_bags_market_metrics() -> None:
                         "symbol": "LOW",
                         "icon": "https://example.test/low.png",
                         "dev": "CreatorLow",
-                        "mcap": 12000,
+                        "circSupply": 1000000000,
                         "usdPrice": 0.000012,
                         "liquidity": 5,
                     },
@@ -52,7 +52,8 @@ def test_jupiter_gems_client_parses_and_dedupes_bags_market_metrics() -> None:
                         "id": "MintTiny",
                         "name": "Tiny",
                         "symbol": "TINY",
-                        "mcap": 9999,
+                        "circSupply": 1000000000,
+                        "usdPrice": 0.000009999,
                     },
                 },
             ]
@@ -68,7 +69,7 @@ def test_jupiter_gems_client_parses_and_dedupes_bags_market_metrics() -> None:
                         "name": "High",
                         "symbol": "HIGH",
                         "firstPool": {"createdAt": "2026-04-22T01:00:00Z"},
-                        "mcap": 50000,
+                        "circSupply": 1000000000,
                         "usdPrice": "0.00005",
                         "liquidity": 250,
                     },
@@ -85,7 +86,7 @@ def test_jupiter_gems_client_parses_and_dedupes_bags_market_metrics() -> None:
                         "id": "MintHigh",
                         "name": "High",
                         "symbol": "HIGH",
-                        "mcap": 45000,
+                        "circSupply": 1000000000,
                         "usdPrice": "0.000045",
                         "liquidity": 200,
                     },
@@ -101,6 +102,8 @@ def test_jupiter_gems_client_parses_and_dedupes_bags_market_metrics() -> None:
     high_pair = client.list_token_pairs("MintHigh")[0]
     assert high_pair.pair_address == "high-pool"
     assert high_pair.market_cap_usd == Decimal("50000")
+    assert high_pair.token_supply == Decimal("1000000000")
+    assert high_pair.market_cap_kind == "circulating"
     assert high_pair.volume_h24_usd == Decimal("1250.5")
     assert high_pair.price_usd == Decimal("0.00005")
     assert high_pair.liquidity_usd == Decimal("250")

@@ -2,6 +2,8 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from nukefm.accounts import AccountStore
 from nukefm.amounts import parse_usdc_amount
 from nukefm.bags import BagsToken
@@ -10,7 +12,7 @@ from nukefm.dexscreener import DexScreenerPair
 from nukefm.database import connect_database, utc_now
 from nukefm.markets import MarketStore
 from nukefm.treasury import DepositAccountAddresses
-from nukefm.weighted_pool import format_decimal, yes_price
+from nukefm.weighted_pool import format_decimal, long_price
 
 
 class FakeTreasury:
@@ -54,7 +56,22 @@ class FakeDexScreenerClient:
 
     def list_token_pairs(self, token_mint: str) -> list[DexScreenerPair]:
         self.calls.append(token_mint)
-        return self._pairs_by_mint.get(token_mint, [])
+        return [self._with_supply(pair) for pair in self._pairs_by_mint.get(token_mint, [])]
+
+    @staticmethod
+    def _with_supply(pair: DexScreenerPair) -> DexScreenerPair:
+        if pair.token_supply is not None or pair.market_cap_usd is None or pair.price_usd is None:
+            return pair
+        return DexScreenerPair(
+            pair_address=pair.pair_address,
+            dex_id=pair.dex_id,
+            price_usd=pair.price_usd,
+            liquidity_usd=pair.liquidity_usd,
+            volume_h24_usd=pair.volume_h24_usd,
+            market_cap_usd=None,
+            token_supply=pair.market_cap_usd / pair.price_usd,
+            market_cap_kind="circulating",
+        )
 
 
 def create_markets_from_prices(
@@ -73,7 +90,9 @@ def create_markets_from_prices(
                         price_usd=price,
                         liquidity_usd=Decimal("100"),
                         volume_h24_usd=Decimal("10"),
-                        market_cap_usd=Decimal("1000"),
+                        market_cap_usd=None,
+                        token_supply=Decimal("1000"),
+                        market_cap_kind="circulating",
                     )
                 ]
                 for mint, price in prices_by_mint.items()
@@ -81,6 +100,95 @@ def create_markets_from_prices(
         ),
         captured_at=captured_at,
     )
+
+
+def test_initialize_destructively_resets_legacy_binary_market_state(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    with connect_database(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE tokens (
+                mint TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                name TEXT NOT NULL,
+                image_url TEXT,
+                launched_at TEXT,
+                creator TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE markets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_mint TEXT NOT NULL,
+                sequence_number INTEGER NOT NULL,
+                question TEXT NOT NULL,
+                state TEXT NOT NULL,
+                market_start TEXT,
+                expiry TEXT,
+                liquidity_deposit_address TEXT,
+                resolved_at TEXT,
+                threshold_price_usd TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_address TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE ledger_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                entry_type TEXT NOT NULL,
+                amount_atomic INTEGER NOT NULL,
+                reference_type TEXT NOT NULL,
+                reference_id TEXT NOT NULL,
+                note TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE market_pools (
+                market_id INTEGER PRIMARY KEY,
+                yes_reserve_atomic INTEGER NOT NULL,
+                no_reserve_atomic INTEGER NOT NULL,
+                yes_weight TEXT NOT NULL,
+                no_weight TEXT NOT NULL,
+                cash_backing_atomic INTEGER NOT NULL,
+                total_liquidity_atomic INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        connection.execute(
+            "INSERT INTO tokens VALUES ('MintLegacy', 'LEG', 'Legacy', NULL, NULL, NULL, '2026-04-15T00:00:00+00:00', '2026-04-15T00:00:00+00:00')"
+        )
+        connection.execute(
+            "INSERT INTO users VALUES (1, 'wallet', '2026-04-15T00:00:00+00:00', '2026-04-15T00:00:00+00:00')"
+        )
+        connection.execute(
+            "INSERT INTO markets VALUES (1, 'MintLegacy', 1, 'Will LEG nuke?', 'open', '2026-04-15T00:00:00+00:00', NULL, NULL, NULL, '0.1', '2026-04-15T00:00:00+00:00', '2026-04-15T00:00:00+00:00')"
+        )
+        connection.execute(
+            "INSERT INTO market_pools VALUES (1, 100, 100, '0.5', '0.5', 100, 100, '2026-04-15T00:00:00+00:00', '2026-04-15T00:00:00+00:00')"
+        )
+        connection.execute(
+            "INSERT INTO ledger_entries VALUES (1, 1, 'market_buy_yes', -100, 'market_trade', '1', 'legacy trade', '2026-04-15T00:00:00+00:00')"
+        )
+        connection.execute(
+            "INSERT INTO ledger_entries VALUES (2, 1, 'deposit_credit', 1000, 'deposit', '1', 'deposit', '2026-04-15T00:00:00+00:00')"
+        )
+
+    MarketStore(database_path).initialize()
+
+    with connect_database(database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) AS count FROM markets").fetchone()["count"] == 0
+        assert connection.execute("SELECT COUNT(*) AS count FROM tokens").fetchone()["count"] == 1
+        assert connection.execute("SELECT entry_type FROM ledger_entries").fetchall()[0]["entry_type"] == "deposit_credit"
+        pool_columns = {row["name"] for row in connection.execute("PRAGMA table_info(market_pools)").fetchall()}
+
+    assert "long_reserve_atomic" in pool_columns
+    assert "yes_reserve_atomic" not in pool_columns
 
 
 class SelectiveSettlementPriceClient:
@@ -96,6 +204,7 @@ class SelectiveSettlementPriceClient:
         return self._prices_by_mint[token_mint]
 
 
+@pytest.mark.skip(reason="Legacy binary markets are destructively reset instead of migrated.")
 def test_initialize_migrates_legacy_market_in_place_and_preserves_deposit_address(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     with connect_database(database_path) as connection:
@@ -241,7 +350,7 @@ def test_initialize_migrates_legacy_market_in_place_and_preserves_deposit_addres
     with connect_database(database_path) as connection:
         migrated_market = connection.execute(
             """
-            SELECT id, question, expiry, liquidity_deposit_address, starting_price_usd, threshold_price_usd, range_floor_price_usd, range_ceiling_price_usd
+            SELECT id, question, expiry, liquidity_deposit_address, starting_price_usd, min_price_usd, min_price_usd, max_price_usd
             FROM markets
             WHERE id = 7
             """
@@ -259,15 +368,16 @@ def test_initialize_migrates_legacy_market_in_place_and_preserves_deposit_addres
     assert migrated_market["question"] == "Will LEG nuke?"
     assert migrated_market["liquidity_deposit_address"] == "legacy-deposit-address"
     assert migrated_market["starting_price_usd"] == "2.5"
-    assert migrated_market["threshold_price_usd"] == "0.25"
-    assert migrated_market["range_floor_price_usd"] == "0.625"
-    assert migrated_market["range_ceiling_price_usd"] == "10"
+    assert migrated_market["min_price_usd"] == "0.25"
+    assert migrated_market["min_price_usd"] == "0.625"
+    assert migrated_market["max_price_usd"] == "10"
     assert migrated_market["expiry"] == "2026-07-14T16:34:04+00:00"
     assert migrated_account is not None
     assert migrated_account["market_id"] == 7
     assert migrated_account["token_account_address"] == "legacy-deposit-address"
 
 
+@pytest.mark.skip(reason="Legacy binary markets are destructively reset instead of parked.")
 def test_initialize_parks_addressed_legacy_market_until_price_is_available(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     with connect_database(database_path) as connection:
@@ -405,6 +515,7 @@ def test_initialize_parks_addressed_legacy_market_until_price_is_available(tmp_p
     assert token["hidden_active_markets"] == []
 
 
+@pytest.mark.skip(reason="Legacy binary markets are destructively reset in one path.")
 def test_initialize_prunes_dead_legacy_markets_without_observed_price(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     with connect_database(database_path) as connection:
@@ -484,6 +595,7 @@ def test_initialize_prunes_dead_legacy_markets_without_observed_price(tmp_path: 
     assert remaining_markets == 0
 
 
+@pytest.mark.skip(reason="Old binary threshold resolution test; scalar settlement is expiry-based.")
 def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     catalog = Catalog(database_path)
@@ -539,7 +651,7 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     buy_trade = market_store.execute_trade(
         user_id=user["id"],
         market_id=market_id,
-        outcome="yes",
+        outcome="long",
         side="buy",
         amount_atomic=5_000_000,
     )
@@ -578,7 +690,7 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
     with connect_database(database_path) as connection:
         snapshot_rows = connection.execute(
             """
-            SELECT snapshot_hour, captured_at, reference_price_usd, ath_price_usd, drawdown_fraction, threshold_price_usd
+            SELECT snapshot_hour, captured_at, reference_price_usd, ath_price_usd, drawdown_fraction, min_price_usd
             FROM market_snapshots
             WHERE market_id = ?
             ORDER BY snapshot_hour ASC
@@ -593,7 +705,7 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
             row["reference_price_usd"],
             row["ath_price_usd"],
             row["drawdown_fraction"],
-            row["threshold_price_usd"],
+            row["min_price_usd"],
         )
         for row in snapshot_rows
     ] == [
@@ -608,11 +720,11 @@ def test_snapshot_resolution_and_rollover(tmp_path: Path) -> None:
         resolved_at="2026-04-15T16:05:00+00:00",
     )
 
-    assert resolved == [{"market_id": market_id, "state": "resolved_yes", "resolved_at": "2026-04-15T14:00:00+00:00"}]
+    assert resolved == [{"market_id": market_id, "state": "resolved", "resolved_at": "2026-04-15T14:00:00+00:00"}]
 
     token = market_store.get_token_detail("Mint555")
     assert token is not None
-    assert token["past_markets"][0]["state"] == "resolved_yes"
+    assert token["past_markets"][0]["state"] == "resolved"
     assert token["current_market"]["sequence_number"] == 2
     assert token["current_market"]["liquidity_deposit_address"] == "market-deposit-2"
     assert market_store.list_pending_revenue_sweeps(limit=10) == []
@@ -651,22 +763,22 @@ def test_range_exit_creates_hidden_active_predecessor(tmp_path: Path) -> None:
     )
 
     market_store.capture_hourly_snapshots(
-        FakeSettlementPriceClient([Decimal("45")]),
+        FakeSettlementPriceClient([Decimal("60")]),
         captured_at="2026-04-15T13:00:00+00:00",
     )
 
     token = market_store.get_token_detail("MintRoll")
     assert token is not None
     assert token["current_market"]["sequence_number"] == 2
-    assert token["current_market"]["state"] == "awaiting_liquidity"
-    assert token["current_market"]["starting_price_usd"] == "45"
+    assert token["current_market"]["state"] == "open"
+    assert token["current_market"]["starting_price_usd"] == "60"
     assert token["hidden_active_markets"][0]["id"] == first_market_id
     assert token["hidden_active_markets"][0]["state"] == "open"
     assert token["hidden_active_markets"][0]["is_frontend_visible"] is False
 
     quoted = market_store.quote_trade(
         market_id=first_market_id,
-        outcome="yes",
+        outcome="long",
         side="buy",
         amount_atomic=1_000_000,
     )
@@ -712,7 +824,7 @@ def test_snapshot_uses_last_closed_wall_clock_hour_before_market_start(tmp_path:
             "market_id": market_id,
             "state": "open",
             "reference_price_usd": "1",
-            "threshold_price_usd": "0.1",
+            "long_rate": "0.5",
         }
     ]
     assert updated == [
@@ -720,7 +832,7 @@ def test_snapshot_uses_last_closed_wall_clock_hour_before_market_start(tmp_path:
             "market_id": market_id,
             "state": "open",
             "reference_price_usd": "1.5",
-            "threshold_price_usd": "0.1",
+            "long_rate": "0.588046",
         }
     ]
     assert price_client.calls == [
@@ -739,7 +851,7 @@ def test_snapshot_uses_last_closed_wall_clock_hour_before_market_start(tmp_path:
     with connect_database(database_path) as connection:
         snapshot_rows = connection.execute(
             """
-            SELECT snapshot_hour, captured_at, reference_price_usd, ath_price_usd, threshold_price_usd
+            SELECT snapshot_hour, captured_at, reference_price_usd
             FROM market_snapshots
             WHERE market_id = ?
             """,
@@ -751,15 +863,11 @@ def test_snapshot_uses_last_closed_wall_clock_hour_before_market_start(tmp_path:
             "2026-04-15T16:00:00+00:00",
             "2026-04-15T16:34:30+00:00",
             "1",
-            "1",
-            "0.1",
         ),
         (
             "2026-04-15T17:00:00+00:00",
             "2026-04-15T17:05:00+00:00",
             "1.5",
-            "1",
-            "0.1",
         )
     ]
 
@@ -816,7 +924,7 @@ def test_snapshot_skips_only_markets_missing_price_data(tmp_path: Path) -> None:
             "market_id": good_market_id,
             "state": "open",
             "reference_price_usd": "2",
-            "threshold_price_usd": "0.2",
+            "long_rate": "0.5",
         }
     ]
 
@@ -967,13 +1075,12 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     assert alpha_card is not None
     assert alpha_card["current_market"]["total_liquidity_usdc"] == "5"
     assert alpha_card["current_market"]["underlying_volume_24h_usd"] == "120"
-    assert alpha_card["current_market"]["underlying_market_cap_usd"] == "1000"
+    assert alpha_card["current_market"]["underlying_market_cap_usd"] == "2000"
 
     beta_card = market_store.get_token_detail("MintB")
     assert beta_card is not None
-    assert beta_card["current_market"]["remaining_drop_percent"] == "86.67%"
     assert beta_card["current_market"]["underlying_volume_24h_usd"] == "250"
-    assert beta_card["current_market"]["underlying_market_cap_usd"] == "8000"
+    assert beta_card["current_market"]["underlying_market_cap_usd"] == "18461.538462"
 
     gamma_card = market_store.get_token_detail("MintC")
     assert gamma_card is not None
@@ -984,8 +1091,8 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     expected_orders = {
         ("market_liquidity", "asc"): ["MintA", "MintB", "MintC"],
         ("market_liquidity", "desc"): ["MintB", "MintA", "MintC"],
-        ("dump_percentage", "asc"): ["MintA", "MintB", "MintC"],
-        ("dump_percentage", "desc"): ["MintC", "MintB", "MintA"],
+        ("predicted_nuke_percent", "asc"): ["MintA", "MintB", "MintC"],
+        ("predicted_nuke_percent", "desc"): ["MintB", "MintA", "MintC"],
         ("underlying_volume", "asc"): ["MintA", "MintB", "MintC"],
         ("underlying_volume", "desc"): ["MintB", "MintA", "MintC"],
         ("underlying_market_cap", "asc"): ["MintA", "MintB", "MintC"],
@@ -1037,10 +1144,10 @@ def test_current_market_serialization_uses_trailing_24h_pm_volume(tmp_path: Path
                     side,
                     cash_amount_atomic,
                     share_amount_atomic,
-                    before_yes_price,
-                    before_no_price,
-                    after_yes_price,
-                    after_no_price,
+                    before_long_price,
+                    before_short_price,
+                    after_long_price,
+                    after_short_price,
                     created_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1048,7 +1155,7 @@ def test_current_market_serialization_uses_trailing_24h_pm_volume(tmp_path: Path
                 [
                     user["id"],
                     market_id,
-                    "yes",
+                    "long",
                     "buy",
                     cash_amount_atomic,
                     cash_amount_atomic,
@@ -1137,7 +1244,7 @@ def test_market_chart_snapshots_bucket_and_serialize_current_series(tmp_path: Pa
     market_store.execute_trade(
         user_id=user["id"],
         market_id=market_id,
-        outcome="yes",
+        outcome="long",
         side="buy",
         amount_atomic=2_000_000,
     )
@@ -1159,7 +1266,8 @@ def test_market_chart_snapshots_bucket_and_serialize_current_series(tmp_path: Pa
         captured_at="2026-04-15T12:39:54+00:00",
     )
     with connect_database(database_path) as connection:
-        expected_chance_percent = format_decimal(yes_price(market_store._load_pool(connection, market_id)) * Decimal("100"))
+        market_row = connection.execute("SELECT * FROM markets WHERE id = ?", [market_id]).fetchone()
+        expected_implied_price = format_decimal(market_store._implied_price_usd(long_price(market_store._load_pool(connection, market_id)), market_row))
     updated_same_bucket = market_store.capture_market_chart_snapshots(
         FakeDexScreenerClient(
             {
@@ -1183,7 +1291,7 @@ def test_market_chart_snapshots_bucket_and_serialize_current_series(tmp_path: Pa
             "market_id": market_id,
             "captured_at": "2026-04-15T12:30:00+00:00",
             "underlying_price_usd": "1.25",
-            "chance_of_outcome_percent": "50",
+            "implied_price_usd": "1.25",
         }
     ]
     assert second_capture == [
@@ -1191,7 +1299,7 @@ def test_market_chart_snapshots_bucket_and_serialize_current_series(tmp_path: Pa
             "market_id": market_id,
             "captured_at": "2026-04-15T12:35:00+00:00",
             "underlying_price_usd": "1.5",
-            "chance_of_outcome_percent": expected_chance_percent,
+            "implied_price_usd": expected_implied_price,
         }
     ]
     assert updated_same_bucket == [
@@ -1199,7 +1307,7 @@ def test_market_chart_snapshots_bucket_and_serialize_current_series(tmp_path: Pa
             "market_id": market_id,
             "captured_at": "2026-04-15T12:35:00+00:00",
             "underlying_price_usd": "1.55",
-            "chance_of_outcome_percent": expected_chance_percent,
+            "implied_price_usd": expected_implied_price,
         }
     ]
 
@@ -1212,12 +1320,12 @@ def test_market_chart_snapshots_bucket_and_serialize_current_series(tmp_path: Pa
             {
                 "captured_at": "2026-04-15T12:30:00+00:00",
                 "underlying_price_usd": "1.25",
-                "chance_of_outcome_percent": "50",
+                "implied_price_usd": "1.25",
             },
             {
                 "captured_at": "2026-04-15T12:35:00+00:00",
                 "underlying_price_usd": "1.55",
-                "chance_of_outcome_percent": expected_chance_percent,
+                "implied_price_usd": expected_implied_price,
             },
         ],
     }

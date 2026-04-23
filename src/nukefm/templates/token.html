@@ -5,13 +5,13 @@
 {% set chart = token.current_market_chart %}
 {% if market.state == "awaiting_liquidity" %}
   {% set trader_state = "Signal waiting on seed" %}
-  {% set trader_state_note = "The next visible series is staged with a fixed nuke threshold. Trading opens after the first funded liquidity deposit." %}
+  {% set trader_state_note = "The next visible series is staged with a scalar LONG/SHORT price range. Trading opens after the first funded liquidity deposit." %}
 {% elif market.state == "open" %}
   {% set trader_state = "Signal live" %}
-  {% set trader_state_note = "The PM is live. Compare the chance of nuke against the latest monitored token price and the fixed nuke threshold before acting on the token." %}
+  {% set trader_state_note = "The PM is live. Compare the market-implied terminal price with the latest 24h-median token price before acting on the token." %}
 {% elif market.state == "halted" %}
   {% set trader_state = "Signal paused" %}
-  {% set trader_state_note = "Trading is halted. Use the last captured token price, fixed threshold, and activity trail as context, not as a fresh live read." %}
+  {% set trader_state_note = "Trading is halted. Use the last captured 24h-median token price, implied price, and activity trail as context, not as a fresh live read." %}
 {% else %}
   {% set trader_state = "Series closed" %}
   {% set trader_state_note = "This series has resolved. Use it as historical context only." %}
@@ -39,11 +39,11 @@
 
   <section class="decision-strip">
     <article class="decision-card decision-card-primary">
-      <p class="decision-label">Chance of nuke</p>
-      <p class="decision-value">{{ market.chance_of_outcome_percent or "Not live yet" }}</p>
+      <p class="decision-label">Implied price</p>
+      <p class="decision-value">{{ usd_display(market.implied_price_usd) or "Not live yet" }}</p>
       <p class="decision-copy">
         {% if market.state == "open" %}
-        Derived from the live market price.
+        Inverted from the live LONG price.
         {% else %}
         Goes live with the first funded seed.
         {% endif %}
@@ -60,9 +60,9 @@
       <p class="decision-copy">Trailing 24h PM trades.</p>
     </article>
     <article class="decision-card">
-      <p class="decision-label">Token cap</p>
-      <p class="decision-value">{{ usd_display(market.underlying_market_cap_usd) or "Market cap pending" }}</p>
-      <p class="decision-copy">Underlying token market cap.</p>
+      <p class="decision-label">Predicted nuke %</p>
+      <p class="decision-value">{{ market.predicted_nuke_percent or "Pending" }}</p>
+      <p class="decision-copy">Derived from predicted vs current 24h-median market cap.</p>
     </article>
   </section>
 
@@ -103,13 +103,13 @@
   <div class="detail-section-heading">
     <div>
       <p class="eyebrow">Overlay</p>
-      <h2>Token price vs chance of nuke</h2>
+      <h2>Token price vs implied price</h2>
     </div>
     <p class="section-copy">Aligned 5 minute snapshots for the current series, with separate axes for price and market signal.</p>
   </div>
   {% if chart.points %}
   <div class="chart-shell">
-    <canvas id="token-overlay-chart" aria-label="Token price and chance of nuke chart" role="img"></canvas>
+    <canvas id="token-overlay-chart" aria-label="Token price and implied price chart" role="img"></canvas>
   </div>
   {% if chart.points|length == 1 %}
   <p class="availability-note">Only one chart point is available so far. The overlay will become readable as the 5 minute snapshot job fills in more history.</p>
@@ -135,6 +135,10 @@
     <div>
       <dt>Starting price</dt>
       <dd>{{ usd_display(market.starting_price_usd) }}</dd>
+    </div>
+    <div>
+      <dt>Scalar range</dt>
+      <dd>{{ usd_display(market.min_price_usd) }} to {{ usd_display(market.max_price_usd) }}</dd>
     </div>
     <div>
       <dt>Market Start</dt>
@@ -275,9 +279,9 @@
             tension: 0.22,
           },
           {
-            label: "Chance of nuke",
-            data: overlayPoints.map((point) => Number(point.chance_of_outcome_percent)),
-            yAxisID: "chance",
+            label: "Implied price",
+            data: overlayPoints.map((point) => Number(point.implied_price_usd)),
+            yAxisID: "implied",
             borderColor: "#fc7981",
             backgroundColor: "rgba(252, 121, 129, 0.08)",
             borderWidth: 2,
@@ -311,8 +315,8 @@
             cornerRadius: 12,
             callbacks: {
               label(context) {
-                if (context.dataset.yAxisID === "chance") {
-                  return `${context.dataset.label}: ${numberFormatter.format(context.parsed.y)}%`;
+                if (context.dataset.yAxisID === "implied") {
+                  return `${context.dataset.label}: ${formatUsd(context.parsed.y)}`;
                 }
                 return `${context.dataset.label}: ${formatUsd(context.parsed.y)}`;
               },
@@ -340,16 +344,14 @@
               callback(value) { return formatUsd(value); },
             },
           },
-          chance: {
+          implied: {
             type: "linear",
             position: "right",
-            min: 0,
-            max: 100,
             grid: { drawOnChartArea: false },
             ticks: {
               color: "#fc7981",
               font: { family: "'Space Mono', monospace", size: 11 },
-              callback(value) { return `${numberFormatter.format(value)}%`; },
+              callback(value) { return formatUsd(value); },
             },
           },
         },

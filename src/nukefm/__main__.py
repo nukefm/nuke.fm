@@ -69,9 +69,9 @@ def main() -> None:
     market_store = MarketStore(
         settings.database_path,
         market_duration_days=settings.market_duration_days,
-        resolution_threshold_fraction=Decimal(settings.market_resolution_threshold_fraction),
-        rollover_lower_bound_fraction=Decimal(settings.market_rollover_lower_bound_fraction),
-        rollover_upper_bound_fraction=Decimal(settings.market_rollover_upper_bound_fraction),
+        market_price_range_multiple=Decimal(settings.market_price_range_multiple),
+        market_rollover_boundary_rate=Decimal(settings.market_rollover_boundary_rate),
+        market_rollover_liquidity_transfer_fraction=Decimal(settings.market_rollover_liquidity_transfer_fraction),
     )
     market_store.initialize()
     treasury: SolanaTreasury | None = None
@@ -102,7 +102,7 @@ def main() -> None:
 
     if arguments.command == "sync-token-metrics":
         captured_metrics = market_store.capture_token_metrics(
-            JupiterGemsClient(base_url=settings.jupiter_gems_base_url),
+            JupiterTokensClient(base_url=settings.jupiter_tokens_base_url),
         )
         logger.info(f"Captured {len(captured_metrics)} token metric snapshots.")
         return
@@ -158,7 +158,7 @@ def main() -> None:
     client = JupiterGemsClient(base_url=settings.jupiter_gems_base_url)
     ingested_count = catalog.ingest_tokens(client.list_tokens(limit=arguments.limit))
     captured_metrics = market_store.capture_token_metrics(
-        client,
+        JupiterTokensClient(base_url=settings.jupiter_tokens_base_url),
     )
     logger.info(
         "Ingested {} Bags tokens into the market catalog and refreshed {} token metric snapshots.",

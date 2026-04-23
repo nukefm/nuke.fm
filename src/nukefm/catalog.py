@@ -11,7 +11,7 @@ ACTIVE_MARKET_STATES = {"awaiting_liquidity", "open", "halted"}
 
 
 def seed_market_question(symbol: str) -> str:
-    return f"Will {symbol} nuke?"
+    return f"What will {symbol} trade at?"
 
 
 def display_market_state(state: str) -> str:
@@ -50,9 +50,8 @@ class Catalog:
                     liquidity_deposit_address TEXT,
                     resolved_at TEXT,
                     starting_price_usd TEXT,
-                    threshold_price_usd TEXT,
-                    range_floor_price_usd TEXT,
-                    range_ceiling_price_usd TEXT,
+                    min_price_usd TEXT,
+                    max_price_usd TEXT,
                     is_frontend_visible INTEGER NOT NULL DEFAULT 1,
                     superseded_by_market_id INTEGER REFERENCES markets(id) ON DELETE SET NULL,
                     superseded_at TEXT,
@@ -63,9 +62,8 @@ class Catalog:
                 """
             )
             self._ensure_market_column(connection, "starting_price_usd", "TEXT")
-            self._ensure_market_column(connection, "threshold_price_usd", "TEXT")
-            self._ensure_market_column(connection, "range_floor_price_usd", "TEXT")
-            self._ensure_market_column(connection, "range_ceiling_price_usd", "TEXT")
+            self._ensure_market_column(connection, "min_price_usd", "TEXT")
+            self._ensure_market_column(connection, "max_price_usd", "TEXT")
             self._ensure_market_column(connection, "is_frontend_visible", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_market_column(connection, "superseded_by_market_id", "INTEGER REFERENCES markets(id) ON DELETE SET NULL")
             self._ensure_market_column(connection, "superseded_at", "TEXT")
@@ -106,7 +104,7 @@ class Catalog:
                 SELECT *
                 FROM markets
                 WHERE token_mint = ?
-                  AND state IN ('resolved_yes', 'resolved_no', 'void')
+                  AND state IN ('resolved', 'void')
                 ORDER BY sequence_number DESC
                 """,
                 [mint],
@@ -128,7 +126,7 @@ class Catalog:
         }
 
     def resolve_market(self, market_id: int, outcome_state: str, resolved_at: str | None = None) -> None:
-        if outcome_state not in {"resolved_yes", "resolved_no", "void"}:
+        if outcome_state not in {"resolved", "void"}:
             raise ValueError(f"Invalid resolved market state: {outcome_state}")
 
         resolved_timestamp = resolved_at or utc_now()
@@ -214,16 +212,16 @@ class Catalog:
             "resolved_at": row["resolved_at"],
             "created_at": row["created_at"],
             "starting_price_usd": row["starting_price_usd"],
-            "threshold_price_usd": row["threshold_price_usd"],
-            "range_floor_price_usd": row["range_floor_price_usd"],
-            "range_ceiling_price_usd": row["range_ceiling_price_usd"],
+            "min_price_usd": row["min_price_usd"],
+            "max_price_usd": row["max_price_usd"],
             "is_frontend_visible": bool(row["is_frontend_visible"]),
             "superseded_by_market_id": row["superseded_by_market_id"],
             "superseded_at": row["superseded_at"],
-            "yes_price_usd": None,
-            "no_price_usd": None,
+            "long_price_usd": None,
+            "short_price_usd": None,
             "reference_price_usd": None,
-            "chance_of_outcome_percent": None,
+            "implied_price_usd": None,
+            "predicted_nuke_percent": None,
         }
 
     @staticmethod

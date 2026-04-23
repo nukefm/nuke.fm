@@ -1,6 +1,6 @@
 # do now
 - [x] show icons for each memecoin
-- initialise top 4 mkts by vol
+- [x] initialise top 4 mkts by vol
 - use font color to distinguish positive from negative nuke values
 
 # ignore for now

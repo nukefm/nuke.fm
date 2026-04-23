@@ -14,6 +14,10 @@ work_tree="${app_root}/current"
 shared_dir="${app_root}/shared"
 runtime_env="${shared_dir}/runtime.env"
 service_name="nukefm.service"
+refresh_service_name="nukefm-refresh.service"
+refresh_timer_name="nukefm-refresh.timer"
+seed_service_name="nukefm-seed-weekly.service"
+seed_timer_name="nukefm-seed-weekly.timer"
 
 if [ -z "${deploy_home}" ]; then
     echo "User '${deploy_user}' does not exist on the host." >&2
@@ -74,6 +78,70 @@ TimeoutStartSec=180
 WantedBy=multi-user.target
 EOF
 
+cat >/etc/systemd/system/${refresh_service_name} <<EOF
+[Unit]
+Description=Refresh nuke.fm Bags catalog and token metrics
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${deploy_user}
+Group=${deploy_user}
+WorkingDirectory=${work_tree}
+Environment=HOME=${deploy_home}
+Environment=PATH=${deploy_home}/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=${runtime_env}
+ExecStart=${work_tree}/ops/ec2/run-job.sh ingest --limit 100
+EOF
+
+cat >/etc/systemd/system/${refresh_timer_name} <<EOF
+[Unit]
+Description=Run nuke.fm catalog and token metric refresh
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=10m
+Persistent=true
+RandomizedDelaySec=60s
+Unit=${refresh_service_name}
+
+[Install]
+WantedBy=timers.target
+EOF
+
+cat >/etc/systemd/system/${seed_service_name} <<EOF
+[Unit]
+Description=Weekly nuke.fm top-market auto seed
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${deploy_user}
+Group=${deploy_user}
+WorkingDirectory=${work_tree}
+Environment=HOME=${deploy_home}
+Environment=PATH=${deploy_home}/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=${runtime_env}
+ExecStart=${work_tree}/ops/ec2/run-job.sh ingest --limit 100
+ExecStart=${work_tree}/ops/ec2/run-job.sh seed-weekly-liquidity --top 10 --amount-usdc 1
+EOF
+
+cat >/etc/systemd/system/${seed_timer_name} <<EOF
+[Unit]
+Description=Run weekly nuke.fm top-market auto seed
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=15m
+Unit=${seed_service_name}
+
+[Install]
+WantedBy=timers.target
+EOF
+
 cat >"${git_dir}/hooks/post-receive" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -113,5 +181,7 @@ visudo -cf /etc/sudoers.d/nukefm-deploy
 
 systemctl daemon-reload
 systemctl enable ${service_name}
+systemctl enable ${refresh_timer_name}
+systemctl enable ${seed_timer_name}
 systemctl enable caddy
 systemctl restart caddy

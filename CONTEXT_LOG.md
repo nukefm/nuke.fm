@@ -17,10 +17,9 @@
 
 ## First Deliverable Implementation
 
-- The first shipped slice uses a local SQLite catalog with FastAPI and Jinja templates. It ingests Bags launch-feed metadata, creates one current market per token, and renders that catalog through both HTML pages and `/v1/public` JSON.
+- The first shipped slice used a local SQLite catalog with FastAPI and Jinja templates. The live catalog now ingests Jupiter Bags gems rather than the older Bags launch-feed route so the board tracks tokens with meaningful market cap.
 - Current-market price, liquidity-address, reference-price, ATH, drawdown, and threshold fields remain explicitly `null` in the public API until the later AMM, liquidity, and settlement deliverables exist. They are not inferred or synthesized.
-- The Bags launch-feed route is configurable through `config.json` as `bags_launch_feed_path` because the docs clearly expose the feed concept but the concrete path may shift over time.
-- The live Bags launch feed currently rejects query parameters such as `limit`. Fetch the feed without query parameters, then truncate locally after parsing the `response` array.
+- The older Bags launch-feed path was removed from normal ingestion after it proved less useful for market-cap-ranked discovery than the Jupiter Bags gems pool feed.
 
 ## Private API And Treasury
 
@@ -40,9 +39,10 @@
 
 - The live public token-list order now lives in `MarketStore.list_token_cards()`, not in the catalog layer, so the same sort path can serve both `/v1/public/tokens` and `/`.
 - Token-level metrics are stored as snapshots in SQLite instead of being fetched during reads. That keeps the board deterministic and lets the operator refresh metrics explicitly with a CLI command.
-- Jupiter token search is the current metric source for Bags tokens because it covers Bags mints and returns market-cap, liquidity, and rolling volume fields that were often missing under the earlier DexScreener path.
+- Jupiter Bags gems is the board/catalog metric source because Bags' own frontend uses that pool feed for Bags launchpad market-cap discovery. Jupiter token search still backs per-market chart snapshots where an arbitrary current token price is needed.
 - Underlying volume is stored from the current metric source snapshot, while underlying market cap should come from an explicit reported market-cap field rather than being inferred at read time.
 - Missing metrics stay `null` and are sorted last in both directions so absent data never dominates the board.
+- The EC2 deploy should install a 10-minute catalog/metric refresh timer. Weekly seeding alone is not enough, because stale token snapshots make market-cap sorting look broken even when the comparator is correct.
 
 ## Weekly PM Seeding
 

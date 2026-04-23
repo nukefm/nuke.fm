@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,16 +22,13 @@ class Settings:
     market_resolution_threshold_fraction: str
     market_rollover_lower_bound_fraction: str
     market_rollover_upper_bound_fraction: str
-    bags_base_url: str
-    bags_launch_feed_path: str
-    bags_api_key: str | None
-    dexscreener_base_url: str
     solana_rpc_url: str
     solana_usdc_mint: str
     secret_tool_service: str
     deposit_master_seed_secret_name: str
     treasury_seed_secret_name: str
     jupiter_tokens_base_url: str = "https://api.jup.ag/tokens/v2"
+    jupiter_gems_base_url: str = "https://datapi.jup.ag/v1"
 
 
 def load_settings() -> Settings:
@@ -49,10 +45,7 @@ def load_settings() -> Settings:
         market_resolution_threshold_fraction=config["market_resolution_threshold_fraction"],
         market_rollover_lower_bound_fraction=config["market_rollover_lower_bound_fraction"],
         market_rollover_upper_bound_fraction=config["market_rollover_upper_bound_fraction"],
-        bags_base_url=config["bags_base_url"].rstrip("/"),
-        bags_launch_feed_path=config["bags_launch_feed_path"],
-        bags_api_key=os.getenv("BAGS_API_KEY") or None,
-        dexscreener_base_url=config["dexscreener_base_url"].rstrip("/"),
+        jupiter_gems_base_url=config.get("jupiter_gems_base_url", "https://datapi.jup.ag/v1").rstrip("/"),
         jupiter_tokens_base_url=config.get("jupiter_tokens_base_url", "https://api.jup.ag/tokens/v2").rstrip("/"),
         solana_rpc_url=config["solana_rpc_url"],
         solana_usdc_mint=config["solana_usdc_mint"],

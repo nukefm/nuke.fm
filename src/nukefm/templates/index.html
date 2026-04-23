@@ -179,7 +179,7 @@
 <section class="empty-state">
   {% if total_token_count == 0 %}
   <h1>No tokens ingested yet</h1>
-  <p>Set <code>BAGS_API_KEY</code>, run <code>uv run --env-file .env python -m nukefm ingest</code>, then refresh this page.</p>
+  <p>Run <code>uv run --env-file .env python -m nukefm ingest</code>, then refresh this page.</p>
   {% else %}
   <h1>No initialized markets in view</h1>
   <p>All {{ hidden_uninitialized_count }} current markets are still uninitialized. Use the toggle above to show them.</p>

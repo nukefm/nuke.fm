@@ -30,7 +30,9 @@ class FakeDexScreenerClient:
         return self._pairs_by_mint[token_mint]
 
 
-def test_public_api_and_frontend_render(tmp_path: Path) -> None:
+def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("nukefm.markets.utc_now", lambda: "2026-04-15T14:00:00+00:00")
+
     database_path = tmp_path / "catalog.sqlite3"
     log_path = tmp_path / "logs" / "app.log"
     settings = Settings(
@@ -43,10 +45,6 @@ def test_public_api_and_frontend_render(tmp_path: Path) -> None:
         market_resolution_threshold_fraction="0.10",
         market_rollover_lower_bound_fraction="0.25",
         market_rollover_upper_bound_fraction="4.0",
-        bags_base_url="https://public-api-v2.bags.fm/api/v1",
-        bags_launch_feed_path="/token-launch/feed",
-        bags_api_key=None,
-        dexscreener_base_url="https://api.dexscreener.com",
         solana_rpc_url="https://api.mainnet-beta.solana.com",
         solana_usdc_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         secret_tool_service="nuke.fm",
@@ -354,10 +352,6 @@ def test_board_toggle_stays_visible_when_all_markets_are_uninitialized(tmp_path:
         market_resolution_threshold_fraction="0.10",
         market_rollover_lower_bound_fraction="0.25",
         market_rollover_upper_bound_fraction="4.0",
-        bags_base_url="https://public-api-v2.bags.fm/api/v1",
-        bags_launch_feed_path="/token-launch/feed",
-        bags_api_key=None,
-        dexscreener_base_url="https://api.dexscreener.com",
         solana_rpc_url="https://api.mainnet-beta.solana.com",
         solana_usdc_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         secret_tool_service="nuke.fm",

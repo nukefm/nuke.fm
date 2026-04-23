@@ -47,8 +47,8 @@ The frontend still publishes market state only. Wallet connection and trading st
 
 At a high level, the app now has seven moving parts.
 
-First, the ingestion command pulls token launch data from the Bags launch feed and stores token
-metadata in a local SQLite database.
+First, the ingestion command pulls Bags launchpad gems from Jupiter's pool data feed and stores
+token metadata in a local SQLite database.
 
 Second, the catalog layer stores token metadata and market state, while the market lifecycle code
 creates missing visible markets from real observed prices during token-metric refreshes.
@@ -95,10 +95,9 @@ MVP. Important current constraints:
 ## Runtime
 
 - Python 3.13
-- `BAGS_API_KEY` in `.env` for feed ingestion
 - `secret-tool` entries for the deposit master seed and treasury seed
 - network access to Jupiter charts for hourly settlement snapshot jobs
-- network access to Jupiter token metrics for 5 minute market chart snapshot jobs
+- network access to Jupiter gems for board metrics and Jupiter token search for 5 minute market chart snapshot jobs
 
 ## Commands
 
@@ -198,6 +197,8 @@ The visible frontend question is dynamic:
 
 `sync-token-metrics` now does double duty: it stores token metrics and creates any missing
 frontend-visible market using the current observed token price as the fixed market anchor.
+`ingest` uses the same Bags gems source, so the catalog and the market-cap sort are fed by the
+same ranking universe.
 
 Deposits are reconciled from observed USDC token-account balance increases. That works cleanly at
 this stage because user deposit accounts are one-way funding addresses and the current MVP slice
@@ -211,4 +212,4 @@ captured underlying market cap without waiting for an observed on-chain deposit.
 seed is recorded as explicit treasury debt that the operator can fund later with a matching
 treasury-funding entry.
 
-If Bags changes the launch-feed route, update `bags_launch_feed_path` in `config.json` without changing application code.
+If the Jupiter Bags gems route changes, update `jupiter_gems_base_url` in `config.json` without changing application code.

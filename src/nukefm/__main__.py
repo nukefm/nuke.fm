@@ -9,11 +9,9 @@ from loguru import logger
 from .accounts import AccountStore
 from .amounts import parse_usdc_amount
 from .app import create_app
-from .bags import BagsClient
 from .catalog import Catalog
 from .config import load_settings
-from .dexscreener import DexScreenerClient
-from .jupiter import JupiterTokensClient
+from .jupiter import JupiterGemsClient, JupiterTokensClient
 from .logging_utils import configure_logging
 from .markets import MarketStore
 from .settlement import JupiterChartsSettlementPriceClient
@@ -104,7 +102,7 @@ def main() -> None:
 
     if arguments.command == "sync-token-metrics":
         captured_metrics = market_store.capture_token_metrics(
-            JupiterTokensClient(base_url=settings.jupiter_tokens_base_url),
+            JupiterGemsClient(base_url=settings.jupiter_gems_base_url),
         )
         logger.info(f"Captured {len(captured_metrics)} token metric snapshots.")
         return
@@ -157,17 +155,10 @@ def main() -> None:
         )
         return
 
-    if settings.bags_api_key is None:
-        raise SystemExit("BAGS_API_KEY is required to ingest the Bags launch feed.")
-
-    client = BagsClient(
-        base_url=settings.bags_base_url,
-        feed_path=settings.bags_launch_feed_path,
-        api_key=settings.bags_api_key,
-    )
+    client = JupiterGemsClient(base_url=settings.jupiter_gems_base_url)
     ingested_count = catalog.ingest_tokens(client.list_tokens(limit=arguments.limit))
     captured_metrics = market_store.capture_token_metrics(
-        JupiterTokensClient(base_url=settings.jupiter_tokens_base_url),
+        client,
     )
     market_store.ensure_missing_market_liquidity_accounts(get_treasury())
     logger.info(

@@ -291,7 +291,7 @@ class MarketStore:
                         None if market_cap_pair is None else market_cap_pair.pair_address,
                         None if market_cap_pair is None else market_cap_pair.dex_id,
                         None if price_pair is None or price_pair.price_usd is None else str(price_pair.price_usd),
-                        None if price_pair is None else str(price_pair.liquidity_usd),
+                        None if price_pair is None or price_pair.liquidity_usd is None else str(price_pair.liquidity_usd),
                     ],
                 )
                 if self._frontend_visible_market_row(connection, row["mint"]) is None:
@@ -1817,14 +1817,14 @@ class MarketStore:
         eligible_pairs = [pair for pair in pairs if pair.market_cap_usd is not None]
         if not eligible_pairs:
             return None
-        return max(eligible_pairs, key=lambda pair: pair.liquidity_usd)
+        return max(eligible_pairs, key=lambda pair: pair.liquidity_usd or Decimal("0"))
 
     @staticmethod
     def _most_liquid_pair_with_price(pairs: list[DexScreenerPair]) -> DexScreenerPair | None:
         eligible_pairs = [pair for pair in pairs if pair.price_usd is not None]
         if not eligible_pairs:
             return None
-        return max(eligible_pairs, key=lambda pair: pair.liquidity_usd)
+        return max(eligible_pairs, key=lambda pair: pair.liquidity_usd or Decimal("0"))
 
     @staticmethod
     def _list_current_market_rows(connection: sqlite3.Connection) -> list[sqlite3.Row]:

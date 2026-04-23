@@ -10,5 +10,3 @@
 - create trading bot
 - improve ui a lot. it kinda sucks rn
 - improve wording. currently it is somewhat slop
-- should we allow people to trade in these mkts?
-- show mkts according to how bearing the pm is on them

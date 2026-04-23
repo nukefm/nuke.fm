@@ -53,6 +53,7 @@
     <tbody>
       {% for token in tokens %}
       {% set market = token.current_market %}
+      {% set nuke_sign_class = predicted_nuke_sign_class(market.predicted_nuke_fraction) %}
       <tr>
         <th scope="row">
           <a class="token-link{% if token.image_url %} token-link-with-avatar{% endif %}" href="/tokens/{{ token.mint }}">
@@ -75,7 +76,7 @@
           {% endif %}
         </td>
         <td class="nuke-cell">
-          <strong>{{ percent_table_display(market.predicted_nuke_percent) or "Pending" }}</strong>
+          <strong{% if nuke_sign_class %} class="{{ nuke_sign_class }}"{% endif %}>{{ percent_table_display(market.predicted_nuke_percent) or "Pending" }}</strong>
           <small>{% if market.predicted_nuke_percent %}{{ percent_table_display(market.predicted_nuke_percent) }} from current price{% else %}Awaiting seed{% endif %}</small>
         </td>
         <td>{{ usd_table_display(market.implied_price_usd, preserve_tiny_price=true) or "Pending" }}</td>

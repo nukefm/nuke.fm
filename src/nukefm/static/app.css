@@ -401,6 +401,10 @@ h2 {
   color: var(--warm-silver);
 }
 
+.nuke-sign-positive { color: var(--pomegranate-400); }
+.nuke-sign-negative { color: var(--matcha-600); }
+.nuke-sign-neutral { color: var(--warm-charcoal); }
+
 /* ── State Pills ── */
 .state-pill {
   display: inline-flex;

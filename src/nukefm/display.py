@@ -50,3 +50,15 @@ def format_percent_table_display(value: str | int | float | Decimal | None) -> s
         text = text[:-1]
 
     return f"{format(parse_decimal(text).quantize(TABLE_QUANTUM), ',.2f')}%"
+
+
+def predicted_nuke_sign_class(value: str | int | float | Decimal | None) -> str | None:
+    if value is None:
+        return None
+
+    decimal_value = parse_decimal(value)
+    if decimal_value > 0:
+        return "nuke-sign-positive"
+    if decimal_value < 0:
+        return "nuke-sign-negative"
+    return "nuke-sign-neutral"

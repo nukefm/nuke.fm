@@ -3,6 +3,7 @@
 {% block content %}
 {% set market = token.current_market %}
 {% set chart = token.current_market_chart %}
+{% set nuke_sign_class = predicted_nuke_sign_class(market.predicted_nuke_fraction) %}
 {% if market.state == "awaiting_liquidity" %}
   {% set trader_state = "Signal waiting on seed" %}
   {% set trader_state_note = "The next visible series is staged with a scalar LONG/SHORT price range. Trading opens after the first funded liquidity deposit." %}
@@ -61,7 +62,7 @@
     </article>
     <article class="decision-card">
       <p class="decision-label">Predicted nuke %</p>
-      <p class="decision-value">{{ market.predicted_nuke_percent or "Pending" }}</p>
+      <p class="decision-value{% if nuke_sign_class %} {{ nuke_sign_class }}{% endif %}">{{ market.predicted_nuke_percent or "Pending" }}</p>
       <p class="decision-copy">Derived from predicted vs current token market cap.</p>
     </article>
   </section>

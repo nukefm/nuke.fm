@@ -45,12 +45,10 @@ class FakeDexScreenerClient:
         )
 
 
-def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("nukefm.markets.utc_now", lambda: "2026-04-15T14:00:00+00:00")
-
+def app_settings(tmp_path: Path) -> Settings:
     database_path = tmp_path / "catalog.sqlite3"
     log_path = tmp_path / "logs" / "app.log"
-    settings = Settings(
+    return Settings(
         app_name="nuke.fm",
         database_path=database_path,
         log_path=log_path,
@@ -66,6 +64,71 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
         deposit_master_seed_secret_name="deposit-master-seed",
         treasury_seed_secret_name="treasury-seed",
     )
+
+
+class FakeCatalog:
+    def initialize(self) -> None:
+        pass
+
+
+class FakeAccountStore:
+    def initialize(self) -> None:
+        pass
+
+
+class StaticMarketStore:
+    def __init__(self, tokens: list[dict]) -> None:
+        self._tokens = tokens
+
+    def initialize(self) -> None:
+        pass
+
+    def list_token_cards(self, *, sort_by: str | None = None, sort_direction: str = "desc") -> list[dict]:
+        return self._tokens
+
+    def get_token_detail(self, mint: str) -> dict | None:
+        return next((token for token in self._tokens if token["mint"] == mint), None)
+
+
+def token_fixture(*, mint: str, symbol: str, predicted_nuke_percent: str | None, predicted_nuke_fraction: str | None) -> dict:
+    return {
+        "mint": mint,
+        "name": symbol.title(),
+        "symbol": symbol,
+        "image_url": None,
+        "launched_at": None,
+        "creator": None,
+        "current_market_chart": {"points": []},
+        "hidden_active_markets": [],
+        "past_markets": [],
+        "current_market": {
+            "id": 1,
+            "state": "open",
+            "question": f"What will {symbol} trade at?",
+            "sequence_number": 1,
+            "market_start": "2026-04-15T12:00:00+00:00",
+            "expiry": "2026-07-14T12:00:00+00:00",
+            "resolved_at": None,
+            "liquidity_deposit_address": "market-deposit",
+            "implied_price_usd": "1",
+            "starting_price_usd": "1",
+            "min_price_usd": "0.1",
+            "max_price_usd": "10",
+            "pm_volume_24h_usdc": "0",
+            "total_liquidity_usdc": "10",
+            "underlying_volume_24h_usd": "100",
+            "underlying_market_cap_usd": "1000",
+            "predicted_nuke_percent": predicted_nuke_percent,
+            "predicted_nuke_fraction": predicted_nuke_fraction,
+        },
+    }
+
+
+def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("nukefm.markets.utc_now", lambda: "2026-04-15T14:00:00+00:00")
+
+    settings = app_settings(tmp_path)
+    database_path = settings.database_path
 
     catalog = Catalog(database_path)
     catalog.initialize()
@@ -380,24 +443,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_board_can_show_uninitialized_markets_after_reset(tmp_path: Path) -> None:
-    database_path = tmp_path / "catalog.sqlite3"
-    log_path = tmp_path / "logs" / "app.log"
-    settings = Settings(
-        app_name="nuke.fm",
-        database_path=database_path,
-        log_path=log_path,
-        frontend_refresh_seconds=30,
-        api_challenge_ttl_seconds=300,
-        market_duration_days=90,
-        market_price_range_multiple="10",
-        market_rollover_boundary_rate="0.85",
-        market_rollover_liquidity_transfer_fraction="0.80",
-        solana_rpc_url="https://api.mainnet-beta.solana.com",
-        solana_usdc_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-        secret_tool_service="nuke.fm",
-        deposit_master_seed_secret_name="deposit-master-seed",
-        treasury_seed_secret_name="treasury-seed",
-    )
+    settings = app_settings(tmp_path)
+    database_path = settings.database_path
 
     catalog = Catalog(database_path)
     catalog.initialize()
@@ -448,3 +495,51 @@ def test_board_can_show_uninitialized_markets_after_reset(tmp_path: Path) -> Non
     assert "Signal waiting on seed" in expanded_response.text
     assert "No initialized markets in view" not in expanded_response.text
     assert "Hide uninitialized" in expanded_response.text
+
+
+def test_predicted_nuke_values_render_sign_classes(tmp_path: Path) -> None:
+    tokens = [
+        token_fixture(
+            mint="MintPositive",
+            symbol="RISK",
+            predicted_nuke_percent="12.34%",
+            predicted_nuke_fraction="0.1234",
+        ),
+        token_fixture(
+            mint="MintNegative",
+            symbol="UP",
+            predicted_nuke_percent="-56.78%",
+            predicted_nuke_fraction="-0.5678",
+        ),
+        token_fixture(
+            mint="MintPending",
+            symbol="WAIT",
+            predicted_nuke_percent=None,
+            predicted_nuke_fraction=None,
+        ),
+    ]
+    app = create_app(
+        settings=app_settings(tmp_path),
+        catalog=FakeCatalog(),
+        account_store=FakeAccountStore(),
+        market_store=StaticMarketStore(tokens),
+    )
+    client = TestClient(app)
+
+    page_response = client.get("/")
+    assert page_response.status_code == 200
+    assert '<strong class="nuke-sign-positive">12.34%</strong>' in page_response.text
+    assert '<strong class="nuke-sign-negative">-56.78%</strong>' in page_response.text
+    assert "<strong>Pending</strong>" in page_response.text
+
+    positive_detail_response = client.get("/tokens/MintPositive")
+    assert positive_detail_response.status_code == 200
+    assert '<p class="decision-value nuke-sign-positive">12.34%</p>' in positive_detail_response.text
+
+    negative_detail_response = client.get("/tokens/MintNegative")
+    assert negative_detail_response.status_code == 200
+    assert '<p class="decision-value nuke-sign-negative">-56.78%</p>' in negative_detail_response.text
+
+    pending_detail_response = client.get("/tokens/MintPending")
+    assert pending_detail_response.status_code == 200
+    assert '<p class="decision-value">Pending</p>' in pending_detail_response.text

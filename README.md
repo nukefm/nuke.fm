@@ -19,7 +19,7 @@ This repository currently includes these MVP slices:
 - capture hourly settlement snapshots from a rolling 24h median of Jupiter USD price candles
 - track each market against a fixed starting price, fixed nuke threshold, and fixed rollover range
 - capture Jupiter token metrics and sort the public market board by liquidity, dump %, underlying volume, or underlying market cap
-- debt-fund a weekly $1 PM seed into the top 10 current markets by underlying market cap
+- debt-fund a weekly $1 PM seed into the top 4 current markets by underlying 24h volume
 - resolve markets from stored historical snapshots, roll the frontend-visible series when the price exits range, pay winning accounts, and record revenue sweeps
 - expose that catalog through a public JSON API
 - render the same catalog through a read-only web frontend
@@ -110,7 +110,7 @@ MVP. Important current constraints:
 - `uv run --env-file .env python -m nukefm sync-market-liquidity`
 - `uv run --env-file .env python -m nukefm sync-token-metrics`
 - `uv run --env-file .env python -m nukefm snapshot-market-charts`
-- `uv run --env-file .env python -m nukefm seed-weekly-liquidity --top 10 --amount-usdc 1`
+- `uv run --env-file .env python -m nukefm seed-weekly-liquidity --top 4 --amount-usdc 1`
 - `uv run --env-file .env python -m nukefm record-treasury-funding --amount-usdc 10`
 - `uv run --env-file .env python -m nukefm snapshot-markets`
 - `uv run --env-file .env python -m nukefm resolve-markets`
@@ -209,9 +209,9 @@ does not sweep or trade from them yet.
 Market liquidity deposits use the same monotonic-balance reconciliation pattern, but they credit
 weighted-pool depth and market cash backing instead of a user cash balance.
 
-Weekly auto-seeds are different on purpose. They deepen the top current markets by the same derived
-underlying market cap the frontend displays from the latest token metric snapshot. When they do,
-the seed is recorded as explicit treasury debt that the operator can fund later with a matching
-treasury-funding entry.
+Weekly auto-seeds are different on purpose. They deepen the top current markets by latest stored
+underlying 24h token volume. Markets without a latest volume snapshot are skipped rather than
+inferred. When seeded, the amount is recorded as explicit treasury debt that the operator can fund
+later with a matching treasury-funding entry.
 
 If the Bags API route changes, update `bags_api_base_url` in `config.json` without changing application code.

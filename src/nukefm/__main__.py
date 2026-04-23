@@ -38,7 +38,7 @@ def main() -> None:
     subparsers.add_parser("resolve-markets")
 
     seed_weekly_liquidity_parser = subparsers.add_parser("seed-weekly-liquidity")
-    seed_weekly_liquidity_parser.add_argument("--top", type=int, default=10)
+    seed_weekly_liquidity_parser.add_argument("--top", type=int, default=4)
     seed_weekly_liquidity_parser.add_argument("--amount-usdc", default="1")
 
     record_treasury_funding_parser = subparsers.add_parser("record-treasury-funding")
@@ -133,7 +133,7 @@ def main() -> None:
         return
 
     if arguments.command == "seed-weekly-liquidity":
-        seeded_markets = market_store.seed_top_markets_by_market_cap(
+        seeded_markets = market_store.seed_top_markets_by_underlying_volume(
             amount_atomic=parse_usdc_amount(arguments.amount_usdc),
             limit=arguments.top,
         )

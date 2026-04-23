@@ -46,7 +46,7 @@
 
 ## Weekly PM Seeding
 
-- The weekly top-10 auto-seed is intentionally separate from on-chain liquidity reconciliation. `sync-market-liquidity` still means "observed USDC arrived on-chain", while the weekly seed books internal pool liquidity immediately and records matching treasury debt.
+- The weekly top-volume auto-seed is intentionally separate from on-chain liquidity reconciliation. `sync-market-liquidity` still means "observed USDC arrived on-chain", while the weekly seed books internal pool liquidity immediately and records matching treasury debt.
 - That debt is explicit, not an implicit negative treasury balance. Operators pay it down later with a dedicated treasury-funding command after they top up treasury USDC.
 
 ## Frontend Positioning
@@ -74,7 +74,7 @@
 - The rolling 24h settlement median is intentionally not clipped to `market_start`. Early snapshots should reflect the full trailing underlying-token median, including pre-market trading, so the series opens against a real 24h context instead of an artificially shortened window.
 - Jupiter charts do not currently emit empty carry-forward candles for quiet periods. When a finalized hour has no candles in-range, the snapshot layer explicitly carries forward the last known price at or before that hour end.
 - Market-liquidity account creation is now retried on Solana RPC `429` responses, and the bulk account-creation path prioritizes already-open markets first so the frontend-visible seeded markets recover before the long tail of awaiting-liquidity markets.
-- Weekly market-cap auto-seeding ranks by the same token-level market-cap snapshot the frontend displays, so awaiting-liquidity markets can be eligible before they have settlement snapshots.
+- Weekly auto-seeding ranks by the latest token-level underlying 24h volume snapshot, so awaiting-liquidity markets can be eligible before they have settlement snapshots while missing-volume rows stay ineligible.
 
 ## Token Detail Charting
 

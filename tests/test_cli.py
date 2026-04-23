@@ -195,6 +195,80 @@ def test_sync_token_metrics_uses_jupiter_tokens_client(monkeypatch) -> None:
     assert captured["metrics_kwargs"] == {}
 
 
+def test_seed_weekly_liquidity_defaults_to_top_four_volume_markets(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeCatalog:
+        def __init__(self, database_path) -> None:
+            captured["catalog_database_path"] = database_path
+
+        def initialize(self) -> None:
+            captured["catalog_initialized"] = True
+
+    class FakeAccountStore:
+        def __init__(self, database_path) -> None:
+            captured["account_database_path"] = database_path
+
+        def initialize(self) -> None:
+            captured["account_initialized"] = True
+
+    class FakeMarketStore:
+        def __init__(
+            self,
+            database_path,
+            *,
+            market_duration_days,
+            market_price_range_multiple,
+            market_rollover_boundary_rate,
+            market_rollover_liquidity_transfer_fraction,
+        ) -> None:
+            captured["market_database_path"] = database_path
+
+        def initialize(self) -> None:
+            captured["market_initialized"] = True
+
+        def seed_top_markets_by_underlying_volume(self, *, amount_atomic: int, limit: int) -> list[dict]:
+            captured["seed_amount_atomic"] = amount_atomic
+            captured["seed_limit"] = limit
+            return [{"market_id": 1}]
+
+        def get_outstanding_treasury_debt_usdc(self) -> str:
+            return "1"
+
+    def fake_load_settings():
+        return type(
+            "Settings",
+            (),
+            {
+                "log_path": "logs/test.log",
+                "database_path": "data/test.sqlite3",
+                "market_duration_days": 90,
+                "market_price_range_multiple": "10",
+                "market_rollover_boundary_rate": "0.85",
+                "market_rollover_liquidity_transfer_fraction": "0.80",
+            },
+        )()
+
+    def fake_configure_logging(log_path) -> None:
+        captured["log_path"] = log_path
+
+    monkeypatch.setattr(__main__, "load_settings", fake_load_settings)
+    monkeypatch.setattr(__main__, "configure_logging", fake_configure_logging)
+    monkeypatch.setattr(__main__, "Catalog", FakeCatalog)
+    monkeypatch.setattr(__main__, "AccountStore", FakeAccountStore)
+    monkeypatch.setattr(__main__, "MarketStore", FakeMarketStore)
+    monkeypatch.setattr(sys, "argv", ["nukefm", "seed-weekly-liquidity"])
+
+    __main__.main()
+
+    assert captured["log_path"] == "logs/test.log"
+    assert captured["catalog_initialized"] is True
+    assert captured["account_initialized"] is True
+    assert captured["market_initialized"] is True
+    assert captured["seed_amount_atomic"] == 1_000_000
+    assert captured["seed_limit"] == 4
+
+
 def test_ingest_uses_bags_mints_and_jupiter_hydration(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

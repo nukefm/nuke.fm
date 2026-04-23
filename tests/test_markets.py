@@ -1337,7 +1337,7 @@ def test_market_chart_snapshots_bucket_and_serialize_current_series(tmp_path: Pa
     }
 
 
-def test_weekly_auto_seed_targets_top_market_caps_once_per_week(tmp_path: Path) -> None:
+def test_weekly_auto_seed_targets_top_underlying_volume_once_per_week(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     catalog = Catalog(database_path)
     catalog.initialize()
@@ -1366,8 +1366,8 @@ def test_weekly_auto_seed_targets_top_market_caps_once_per_week(tmp_path: Path) 
                         dex_id="raydium",
                         price_usd=Decimal("1"),
                         liquidity_usd=Decimal("100"),
-                        volume_h24_usd=Decimal("10"),
-                        market_cap_usd=None if index == 11 else Decimal(str(index + 1)),
+                        volume_h24_usd=None if index == 11 else Decimal(str(index + 1)),
+                        market_cap_usd=Decimal("1000"),
                     )
                 ]
                 for index in range(12)
@@ -1375,40 +1375,29 @@ def test_weekly_auto_seed_targets_top_market_caps_once_per_week(tmp_path: Path) 
         ),
         captured_at="2026-04-15T12:00:00+00:00",
     )
-    seeded_markets = market_store.seed_top_markets_by_market_cap(
+    seeded_markets = market_store.seed_top_markets_by_underlying_volume(
         amount_atomic=parse_usdc_amount("1"),
-        limit=10,
+        limit=4,
         recorded_at="2026-04-15T13:00:00+00:00",
     )
 
-    assert [row["mint"] for row in seeded_markets] == [
-        "Mint10",
-        "Mint09",
-        "Mint08",
-        "Mint07",
-        "Mint06",
-        "Mint05",
-        "Mint04",
-        "Mint03",
-        "Mint02",
-        "Mint01",
-    ]
-    assert market_store.get_outstanding_treasury_debt_usdc() == "10"
+    assert [row["mint"] for row in seeded_markets] == ["Mint10", "Mint09", "Mint08", "Mint07"]
+    assert market_store.get_outstanding_treasury_debt_usdc() == "4"
 
-    rerun = market_store.seed_top_markets_by_market_cap(
+    rerun = market_store.seed_top_markets_by_underlying_volume(
         amount_atomic=parse_usdc_amount("1"),
-        limit=10,
+        limit=4,
         recorded_at="2026-04-16T09:00:00+00:00",
     )
     assert rerun == []
 
-    next_week = market_store.seed_top_markets_by_market_cap(
+    next_week = market_store.seed_top_markets_by_underlying_volume(
         amount_atomic=parse_usdc_amount("1"),
         limit=2,
         recorded_at="2026-04-22T09:00:00+00:00",
     )
     assert [row["mint"] for row in next_week] == ["Mint10", "Mint09"]
-    assert market_store.get_outstanding_treasury_debt_usdc() == "12"
+    assert market_store.get_outstanding_treasury_debt_usdc() == "6"
 
 
 def test_record_treasury_funding_reduces_auto_seed_debt(tmp_path: Path) -> None:
@@ -1447,7 +1436,7 @@ def test_record_treasury_funding_reduces_auto_seed_debt(tmp_path: Path) -> None:
         ),
         captured_at="2026-04-15T12:00:00+00:00",
     )
-    market_store.seed_top_markets_by_market_cap(
+    market_store.seed_top_markets_by_underlying_volume(
         amount_atomic=parse_usdc_amount("1"),
         limit=1,
         recorded_at="2026-04-15T13:00:00+00:00",

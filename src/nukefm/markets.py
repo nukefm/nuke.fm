@@ -842,11 +842,11 @@ class MarketStore:
                 "short_price_usd": format_decimal(ONE - long_price_usd),
             }
 
-    def seed_top_markets_by_market_cap(
+    def seed_top_markets_by_underlying_volume(
         self,
         *,
         amount_atomic: int,
-        limit: int = 10,
+        limit: int = 4,
         recorded_at: str | None = None,
     ) -> list[dict]:
         credited_at = recorded_at or utc_now()
@@ -860,7 +860,7 @@ class MarketStore:
                         markets.id,
                         markets.token_mint,
                         tokens.symbol,
-                        token_metrics_snapshots.underlying_market_cap_usd
+                        token_metrics_snapshots.underlying_volume_h24_usd
                     FROM tokens
                     JOIN markets
                       ON markets.id = (
@@ -881,15 +881,15 @@ class MarketStore:
                         ORDER BY latest_metrics.captured_at DESC
                         LIMIT 1
                      )
-                    WHERE token_metrics_snapshots.underlying_market_cap_usd IS NOT NULL
-                    ORDER BY CAST(token_metrics_snapshots.underlying_market_cap_usd AS REAL) DESC, markets.id ASC
+                    WHERE token_metrics_snapshots.underlying_volume_h24_usd IS NOT NULL
+                    ORDER BY CAST(token_metrics_snapshots.underlying_volume_h24_usd AS REAL) DESC, markets.id ASC
                     LIMIT ?
                 )
                 SELECT
                     ranked_markets.id,
                     ranked_markets.token_mint,
                     ranked_markets.symbol,
-                    ranked_markets.underlying_market_cap_usd
+                    ranked_markets.underlying_volume_h24_usd
                 FROM ranked_markets
                 WHERE NOT EXISTS (
                     SELECT 1
@@ -897,7 +897,7 @@ class MarketStore:
                     WHERE market_liquidity_seed_events.market_id = ranked_markets.id
                       AND market_liquidity_seed_events.week_start = ?
                 )
-                ORDER BY CAST(ranked_markets.underlying_market_cap_usd AS REAL) DESC, ranked_markets.id ASC
+                ORDER BY CAST(ranked_markets.underlying_volume_h24_usd AS REAL) DESC, ranked_markets.id ASC
                 """,
                 [limit, week_start],
             ).fetchall()

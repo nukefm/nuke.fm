@@ -193,7 +193,7 @@ Environment=HOME=${deploy_home}
 Environment=PATH=${deploy_home}/.local/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=${runtime_env}
 ExecStart=${work_tree}/ops/ec2/run-job.sh ingest --limit 100
-ExecStart=${work_tree}/ops/ec2/run-job.sh seed-weekly-liquidity --top 10 --amount-usdc 1
+ExecStart=${work_tree}/ops/ec2/run-job.sh seed-weekly-liquidity --top 4 --amount-usdc 1
 EOF
 
 cat >/etc/systemd/system/${seed_timer_name} <<EOF

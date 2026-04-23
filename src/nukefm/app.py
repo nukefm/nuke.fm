@@ -25,6 +25,7 @@ TEMPLATES = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
 TEMPLATES.env.globals["usd_display"] = format_usd_display
 TEMPLATES.env.globals["usd_table_display"] = format_usd_table_display
 TEMPLATES.env.globals["percent_table_display"] = format_percent_table_display
+TEMPLATES.env.globals["static_asset_version"] = str(int((PACKAGE_DIR / "static" / "app.css").stat().st_mtime))
 
 
 class ChallengeRequest(BaseModel):

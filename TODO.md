@@ -1,6 +1,6 @@
 # ignore for now
 - deferred: calibrate period and drawdown % from historical data
-- create noise trading bot
+- create trading bot
 - improve ui a lot. it kinda sucks rn
 - improve wording. currently it is somewhat slop
 - debug why mktcap sorting is incorrect 
@@ -9,3 +9,4 @@
 - "Run the 5 minute `snapshot-market-charts` job after the market is live to populate this overlay."
 - move 50% of liq from old into new mkt
 - should we allow people to trade in these mkts?
+- show mkts according to how bearing the pm is on them

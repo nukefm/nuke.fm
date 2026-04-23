@@ -32,8 +32,8 @@ TOKEN_CARD_SORT_OPTIONS = (
     ("state", "State"),
     ("predicted_nuke_percent", "Predicted nuke %"),
     ("expiry", "Expiry"),
-    ("pm_volume", "Prediction market volume"),
-    ("market_liquidity", "Prediction market liquidity"),
+    ("pm_volume", "Prediction volume"),
+    ("market_liquidity", "Prediction liquidity"),
     ("underlying_volume", "Token volume"),
     ("underlying_market_cap", "Token mktcap"),
 )
@@ -860,9 +860,7 @@ class MarketStore:
                         markets.id,
                         markets.token_mint,
                         tokens.symbol,
-                        CAST(token_metrics_snapshots.token_supply AS REAL)
-                            * CAST(market_snapshots.reference_price_usd AS REAL)
-                            AS underlying_market_cap_usd
+                        token_metrics_snapshots.underlying_market_cap_usd
                     FROM tokens
                     JOIN markets
                       ON markets.id = (
@@ -883,18 +881,8 @@ class MarketStore:
                         ORDER BY latest_metrics.captured_at DESC
                         LIMIT 1
                      )
-                    JOIN market_snapshots
-                      ON market_snapshots.market_id = markets.id
-                     AND market_snapshots.snapshot_hour = (
-                        SELECT latest_snapshot.snapshot_hour
-                        FROM market_snapshots AS latest_snapshot
-                        WHERE latest_snapshot.market_id = markets.id
-                        ORDER BY latest_snapshot.snapshot_hour DESC
-                        LIMIT 1
-                     )
-                    WHERE token_metrics_snapshots.token_supply IS NOT NULL
-                      AND market_snapshots.reference_price_usd IS NOT NULL
-                    ORDER BY underlying_market_cap_usd DESC, markets.id ASC
+                    WHERE token_metrics_snapshots.underlying_market_cap_usd IS NOT NULL
+                    ORDER BY CAST(token_metrics_snapshots.underlying_market_cap_usd AS REAL) DESC, markets.id ASC
                     LIMIT ?
                 )
                 SELECT
@@ -1646,7 +1634,11 @@ class MarketStore:
             if latest_token_metrics is None or latest_token_metrics["token_supply"] is None
             else parse_decimal(latest_token_metrics["token_supply"])
         )
-        current_market_cap = None if token_supply is None or current_observed_price is None else token_supply * current_observed_price
+        current_market_cap = (
+            None
+            if latest_token_metrics is None or latest_token_metrics["underlying_market_cap_usd"] is None
+            else parse_decimal(latest_token_metrics["underlying_market_cap_usd"])
+        )
         predicted_market_cap = None if token_supply is None or implied_price is None else token_supply * implied_price
         predicted_nuke_fraction = (
             None

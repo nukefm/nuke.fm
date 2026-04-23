@@ -1075,12 +1075,12 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     assert alpha_card is not None
     assert alpha_card["current_market"]["total_liquidity_usdc"] == "5"
     assert alpha_card["current_market"]["underlying_volume_24h_usd"] == "120"
-    assert alpha_card["current_market"]["underlying_market_cap_usd"] == "2000"
+    assert alpha_card["current_market"]["underlying_market_cap_usd"] == "1000"
 
     beta_card = market_store.get_token_detail("MintB")
     assert beta_card is not None
     assert beta_card["current_market"]["underlying_volume_24h_usd"] == "250"
-    assert beta_card["current_market"]["underlying_market_cap_usd"] == "18461.538462"
+    assert beta_card["current_market"]["underlying_market_cap_usd"] == "8000"
 
     gamma_card = market_store.get_token_detail("MintC")
     assert gamma_card is not None
@@ -1367,7 +1367,7 @@ def test_weekly_auto_seed_targets_top_market_caps_once_per_week(tmp_path: Path) 
                         price_usd=Decimal("1"),
                         liquidity_usd=Decimal("100"),
                         volume_h24_usd=Decimal("10"),
-                        market_cap_usd=Decimal(str(index + 1)),
+                        market_cap_usd=None if index == 11 else Decimal(str(index + 1)),
                     )
                 ]
                 for index in range(12)
@@ -1375,36 +1375,6 @@ def test_weekly_auto_seed_targets_top_market_caps_once_per_week(tmp_path: Path) 
         ),
         captured_at="2026-04-15T12:00:00+00:00",
     )
-    treasury = FakeTreasury()
-    market_store.ensure_missing_market_liquidity_accounts(treasury)
-    for index in range(12):
-        market_id = market_store.get_token_detail(f"Mint{index:02d}")["current_market"]["id"]
-        market_store.record_market_liquidity_credit(
-            market_id=market_id,
-            amount_atomic=1_000_000,
-            observed_balance_after_atomic=1_000_000,
-            credited_at="2026-04-15T12:10:00+00:00",
-        )
-    market_store.capture_hourly_snapshots(
-        FakeSettlementPriceClient(
-            [
-                Decimal("1"),
-                Decimal("1"),
-                Decimal("1"),
-                Decimal("2"),
-                Decimal("1"),
-                Decimal("1"),
-                Decimal("1"),
-                Decimal("1"),
-                Decimal("1"),
-                Decimal("1"),
-                Decimal("1"),
-                Decimal("1"),
-            ]
-        ),
-        captured_at="2026-04-15T13:00:00+00:00",
-    )
-
     seeded_markets = market_store.seed_top_markets_by_market_cap(
         amount_atomic=parse_usdc_amount("1"),
         limit=10,
@@ -1412,16 +1382,16 @@ def test_weekly_auto_seed_targets_top_market_caps_once_per_week(tmp_path: Path) 
     )
 
     assert [row["mint"] for row in seeded_markets] == [
-        "Mint08",
-        "Mint11",
         "Mint10",
         "Mint09",
+        "Mint08",
         "Mint07",
         "Mint06",
         "Mint05",
         "Mint04",
         "Mint03",
         "Mint02",
+        "Mint01",
     ]
     assert market_store.get_outstanding_treasury_debt_usdc() == "10"
 
@@ -1437,7 +1407,7 @@ def test_weekly_auto_seed_targets_top_market_caps_once_per_week(tmp_path: Path) 
         limit=2,
         recorded_at="2026-04-22T09:00:00+00:00",
     )
-    assert [row["mint"] for row in next_week] == ["Mint08", "Mint11"]
+    assert [row["mint"] for row in next_week] == ["Mint10", "Mint09"]
     assert market_store.get_outstanding_treasury_debt_usdc() == "12"
 
 
@@ -1477,20 +1447,6 @@ def test_record_treasury_funding_reduces_auto_seed_debt(tmp_path: Path) -> None:
         ),
         captured_at="2026-04-15T12:00:00+00:00",
     )
-    treasury = FakeTreasury()
-    market_store.ensure_missing_market_liquidity_accounts(treasury)
-    market_id = market_store.get_token_detail("MintA")["current_market"]["id"]
-    market_store.record_market_liquidity_credit(
-        market_id=market_id,
-        amount_atomic=1_000_000,
-        observed_balance_after_atomic=1_000_000,
-        credited_at="2026-04-15T12:10:00+00:00",
-    )
-    market_store.capture_hourly_snapshots(
-        FakeSettlementPriceClient([Decimal("1")]),
-        captured_at="2026-04-15T13:00:00+00:00",
-    )
-
     market_store.seed_top_markets_by_market_cap(
         amount_atomic=parse_usdc_amount("1"),
         limit=1,

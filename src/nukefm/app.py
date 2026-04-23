@@ -316,7 +316,7 @@ def create_app(
     @app.get("/", response_class=HTMLResponse)
     def market_list_page(
         request: Request,
-        sort_by: str | None = "underlying_market_cap",
+        sort_by: str | None = "underlying_volume",
         sort_direction: str = "desc",
         show_uninitialized: bool = False,
     ):

@@ -64,7 +64,7 @@
 - The EC2 host now terminates TLS with Caddy for `nukefm.xyz` and keeps uvicorn private on `127.0.0.1:8000`; proxy headers are trusted only from the local reverse proxy.
 - `ops/ec2/sync-state.sh` must not restore the SQLite DB by default. Database restore is now an explicit `--with-db` action because a failed later secret import previously clobbered live state.
 - `ingest` must stay a catalog/metric refresh command. Do not create on-chain market liquidity accounts there; `sync-market-liquidity` owns that side effect so low treasury SOL cannot block public board freshness.
-- The board/API derive current market cap from token supply multiplied by canonical hourly `market_snapshots.reference_price_usd`, not directly from `token_metrics_snapshots.underlying_market_cap_usd`. Production therefore needs `nukefm-market-snapshots.timer` running `snapshot-markets`; the separate market-chart timer only populates token detail overlay charts.
+- The board/API display token market cap from the latest `token_metrics_snapshots.underlying_market_cap_usd`, independent of prediction-market liquidity state. `market_snapshots` remain the settlement/reference-price series for active markets, not the token market-cap display source.
 
 ## Live Data Dependencies
 
@@ -74,7 +74,7 @@
 - The rolling 24h settlement median is intentionally not clipped to `market_start`. Early snapshots should reflect the full trailing underlying-token median, including pre-market trading, so the series opens against a real 24h context instead of an artificially shortened window.
 - Jupiter charts do not currently emit empty carry-forward candles for quiet periods. When a finalized hour has no candles in-range, the snapshot layer explicitly carries forward the last known price at or before that hour end.
 - Market-liquidity account creation is now retried on Solana RPC `429` responses, and the bulk account-creation path prioritizes already-open markets first so the frontend-visible seeded markets recover before the long tail of awaiting-liquidity markets.
-- Weekly market-cap auto-seeding ranks by the same displayable current market-cap basis as the frontend: latest token supply multiplied by the current market's latest hourly 24h-median reference price. Markets whose frontend mktcap is still `Pending` are intentionally ineligible for that ranking.
+- Weekly market-cap auto-seeding ranks by the same token-level market-cap snapshot the frontend displays, so awaiting-liquidity markets can be eligible before they have settlement snapshots.
 
 ## Token Detail Charting
 

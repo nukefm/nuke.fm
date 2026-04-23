@@ -210,8 +210,8 @@ Market liquidity deposits use the same monotonic-balance reconciliation pattern,
 weighted-pool depth and market cash backing instead of a user cash balance.
 
 Weekly auto-seeds are different on purpose. They deepen the top current markets by the same derived
-underlying market cap the frontend displays: latest token supply multiplied by the latest hourly
-24h-median reference price. When they do, the seed is recorded as explicit treasury debt that the
-operator can fund later with a matching treasury-funding entry.
+underlying market cap the frontend displays from the latest token metric snapshot. When they do,
+the seed is recorded as explicit treasury debt that the operator can fund later with a matching
+treasury-funding entry.
 
 If the Bags API route changes, update `bags_api_base_url` in `config.json` without changing application code.

@@ -1,6 +1,32 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% macro sort_header(label, value) -%}
+  {% set active = sort_by == value %}
+  {% if active and sort_direction == "asc" %}
+    {% set next_sort_by = value %}
+    {% set next_sort_direction = "desc" %}
+    {% set sort_state = "up" %}
+    {% set aria_sort = "ascending" %}
+  {% elif active and sort_direction == "desc" %}
+    {% set next_sort_by = "" %}
+    {% set next_sort_direction = "desc" %}
+    {% set sort_state = "down" %}
+    {% set aria_sort = "descending" %}
+  {% else %}
+    {% set next_sort_by = value %}
+    {% set next_sort_direction = "asc" %}
+    {% set sort_state = "off" %}
+    {% set aria_sort = "none" %}
+  {% endif %}
+  <th scope="col" aria-sort="{{ aria_sort }}">
+    <a class="sort-heading{% if active %} sort-heading-active{% endif %}" href="/?show_uninitialized={% if show_uninitialized %}1{% else %}0{% endif %}&sort_by={{ next_sort_by }}&sort_direction={{ next_sort_direction }}">
+      <span>{{ label }}</span>
+      <small>{{ sort_state }}</small>
+    </a>
+  </th>
+{%- endmacro %}
+
 {% if total_token_count > 0 %}
 <section class="board-controls">
   <div class="board-summary">
@@ -12,27 +38,9 @@
     {% endif %}
   </div>
 
-  <form class="sort-form" method="get">
-    <input type="hidden" name="show_uninitialized" value="{% if show_uninitialized %}1{% else %}0{% endif %}">
-    <label>
-      Sort
-      <select name="sort_by">
-        <option value="" {% if not sort_by %}selected{% endif %}>Launch order</option>
-        {% for value, label in sort_options %}
-        <option value="{{ value }}" {% if sort_by == value %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
-      Direction
-      <select name="sort_direction">
-        {% for value, label in sort_directions %}
-        <option value="{{ value }}" {% if sort_direction == value %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit">Apply</button>
-  </form>
+  {% if sort_by %}
+  <a class="toggle-chip" href="/?show_uninitialized={% if show_uninitialized %}1{% else %}0{% endif %}&sort_by=&sort_direction=desc">Clear sort</a>
+  {% endif %}
 </section>
 {% endif %}
 
@@ -41,15 +49,15 @@
   <table class="token-table">
     <thead>
       <tr>
-        <th scope="col">Token</th>
-        <th scope="col">State</th>
-        <th scope="col">Predicted nuke %</th>
-        <th scope="col">Implied price</th>
-        <th scope="col">Expiry</th>
-        <th scope="col">PM volume</th>
-        <th scope="col">PM liquidity</th>
-        <th scope="col">Underlying volume</th>
-        <th scope="col">Underlying mktcap</th>
+        {{ sort_header("Token", "token") }}
+        {{ sort_header("State", "state") }}
+        {{ sort_header("Predicted nuke %", "predicted_nuke_percent") }}
+        {{ sort_header("Implied price", "implied_price") }}
+        {{ sort_header("Expiry", "expiry") }}
+        {{ sort_header("PM volume", "pm_volume") }}
+        {{ sort_header("PM liquidity", "market_liquidity") }}
+        {{ sort_header("Underlying volume", "underlying_volume") }}
+        {{ sort_header("Underlying mktcap", "underlying_market_cap") }}
       </tr>
     </thead>
     <tbody>

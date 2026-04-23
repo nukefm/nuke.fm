@@ -16,7 +16,7 @@ from .catalog import Catalog
 from .config import load_settings
 from .display import format_usd_display
 from .logging_utils import configure_logging
-from .markets import MarketStore, TOKEN_CARD_SORT_OPTIONS
+from .markets import MarketStore
 from .treasury import SolanaTreasury
 
 
@@ -107,8 +107,6 @@ def _token_card_sort_context(sort_by: str | None, sort_direction: str) -> dict:
     return {
         "sort_by": "" if sort_by in (None, "") else sort_by,
         "sort_direction": (sort_direction or "desc").lower(),
-        "sort_options": TOKEN_CARD_SORT_OPTIONS,
-        "sort_directions": (("desc", "Descending"), ("asc", "Ascending")),
     }
 
 

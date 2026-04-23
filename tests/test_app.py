@@ -277,8 +277,10 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     page_response = client.get("/?sort_by=market_liquidity&sort_direction=desc")
     assert page_response.status_code == 200
     assert 'rel="icon" type="image/svg+xml" href="http://testserver/static/favicon.svg"' in page_response.text
-    assert 'option value="market_liquidity" selected' in page_response.text
-    assert 'option value="desc" selected' in page_response.text
+    assert 'href="/?show_uninitialized=1&sort_by=market_liquidity&sort_direction=asc"' not in page_response.text
+    assert 'href="/?show_uninitialized=1&sort_by=&sort_direction=desc"' in page_response.text
+    assert 'href="/?show_uninitialized=1&sort_by=token&sort_direction=asc"' in page_response.text
+    assert "down" in page_response.text
     assert "$20" in page_response.text
     assert "Predicted nuke %" in page_response.text
     assert "PM liquidity" in page_response.text
@@ -298,6 +300,11 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert toggle_response.status_code == 200
     assert "OMEGA" not in toggle_response.text
     assert "Show uninitialized" in toggle_response.text
+
+    asc_response = client.get("/?sort_by=token&sort_direction=asc")
+    assert asc_response.status_code == 200
+    assert asc_response.text.index("<span>ALPHA</span>") < asc_response.text.index("<span>GAMMA</span>")
+    assert asc_response.text.index("<span>GAMMA</span>") < asc_response.text.index("<span>OMEGA</span>")
 
     detail_api_response = client.get("/v1/public/tokens/Mint333")
     assert detail_api_response.status_code == 200
@@ -415,7 +422,7 @@ def test_board_shows_uninitialized_markets_by_default_after_reset(tmp_path: Path
     assert "Signal waiting on seed" in page_response.text
     assert "No initialized markets in view" not in page_response.text
     assert "Hide uninitialized" in page_response.text
-    assert 'option value="underlying_market_cap" selected' in page_response.text
+    assert 'href="/?show_uninitialized=1&sort_by=&sort_direction=desc"' in page_response.text
 
     filtered_response = client.get("/?show_uninitialized=0")
     assert filtered_response.status_code == 200

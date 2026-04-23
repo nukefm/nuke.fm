@@ -28,6 +28,8 @@ from .weighted_pool import (
 
 
 TOKEN_CARD_SORT_OPTIONS = (
+    ("token", "Token"),
+    ("state", "State"),
     ("predicted_nuke_percent", "Predicted nuke %"),
     ("implied_price", "Implied price"),
     ("expiry", "Expiry"),
@@ -1708,12 +1710,32 @@ class MarketStore:
         if normalized_direction not in {"asc", "desc"}:
             raise ValueError(f"Unsupported token card sort direction: {sort_direction}")
 
+        valued_cards = []
+        missing_cards = []
+        for token_card in token_cards:
+            value = MarketStore._token_card_sort_value(token_card, sort_by)
+            if value is None:
+                missing_cards.append(token_card)
+            else:
+                valued_cards.append((value, token_card))
+
         descending = normalized_direction == "desc"
-        token_cards.sort(key=lambda token_card: MarketStore._token_card_sort_key(token_card, sort_by, descending=descending))
+        valued_cards.sort(key=lambda valued_card: valued_card[0], reverse=descending)
+        token_cards[:] = [token_card for _, token_card in valued_cards] + missing_cards
 
     @staticmethod
-    def _token_card_sort_key(token_card: dict, sort_by: str, *, descending: bool) -> tuple[int, Decimal]:
+    def _token_card_sort_value(token_card: dict, sort_by: str) -> Decimal | tuple[str, str] | tuple[int, str, str, str] | None:
         current_market = token_card["current_market"]
+        if sort_by == "token":
+            return (token_card["symbol"].casefold(), token_card["name"].casefold())
+        if sort_by == "state":
+            state_rank = {"open": 0, "awaiting_liquidity": 1, "halted": 2}
+            return (
+                state_rank.get(current_market["state"], 3),
+                current_market["state"],
+                token_card["symbol"].casefold(),
+                token_card["name"].casefold(),
+            )
         if sort_by == "predicted_nuke_percent":
             value = current_market["predicted_nuke_fraction"]
         elif sort_by == "implied_price":
@@ -1732,10 +1754,9 @@ class MarketStore:
             raise ValueError(f"Unsupported token card sort field: {sort_by}")
 
         if value is None:
-            return (1, Decimal("0"))
+            return None
 
-        decimal_value = Decimal.from_float(MarketStore._parse_timestamp(value).timestamp()) if sort_by == "expiry" else parse_decimal(value)
-        return (0, -decimal_value if descending else decimal_value)
+        return Decimal.from_float(MarketStore._parse_timestamp(value).timestamp()) if sort_by == "expiry" else parse_decimal(value)
 
     def _recent_activity(
         self,

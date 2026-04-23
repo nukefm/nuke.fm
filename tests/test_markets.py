@@ -1091,6 +1091,10 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     expected_orders = {
         ("market_liquidity", "asc"): ["MintA", "MintB", "MintC"],
         ("market_liquidity", "desc"): ["MintB", "MintA", "MintC"],
+        ("token", "asc"): ["MintA", "MintB", "MintC"],
+        ("token", "desc"): ["MintC", "MintB", "MintA"],
+        ("state", "asc"): ["MintA", "MintB", "MintC"],
+        ("state", "desc"): ["MintC", "MintB", "MintA"],
         ("predicted_nuke_percent", "asc"): ["MintA", "MintB", "MintC"],
         ("predicted_nuke_percent", "desc"): ["MintB", "MintA", "MintC"],
         ("underlying_volume", "asc"): ["MintA", "MintB", "MintC"],

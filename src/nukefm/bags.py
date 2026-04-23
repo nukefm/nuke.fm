@@ -38,15 +38,13 @@ class BagsClient:
 
     def list_tokens(self, *, limit: int = 100) -> list[BagsToken]:
         tokens: list[BagsToken] = []
-        for token_mint in self.list_token_mints():
+        for token_mint in self.list_token_mints()[:limit]:
             token = self._metadata_client.get_token_metadata(token_mint)
             if token is None:
                 logger.warning("Skipping Bags token {} because Jupiter returned no exact mint match.", token_mint)
                 continue
 
             tokens.append(token)
-            if len(tokens) >= limit:
-                break
         return tokens
 
     def list_token_mints(self) -> list[str]:

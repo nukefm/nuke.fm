@@ -76,7 +76,7 @@ def test_jupiter_tokens_client_matches_exact_mint_for_metadata_and_metrics() -> 
     assert pair.market_cap_usd is None
     assert pair.token_supply == Decimal("1000000000")
     assert pair.market_cap_kind == "circulating"
-    assert all(call["params"]["query"] == "MintExact" for call in client._session.gets)
+    assert [call["params"]["query"] for call in client._session.gets] == ["MintExact"]
 
 
 def test_bags_client_uses_bags_mints_then_hydrates_from_jupiter() -> None:
@@ -129,3 +129,43 @@ def test_bags_client_uses_bags_mints_then_hydrates_from_jupiter() -> None:
             "timeout": 30,
         }
     ]
+
+
+def test_bags_client_bounds_jupiter_hydration_to_requested_limit() -> None:
+    bags_session = FakeSession(
+        {
+            "pools": {
+                "success": True,
+                "response": [
+                    {"tokenMint": "MintA"},
+                    {"tokenMint": "MintB"},
+                    {"tokenMint": "MintC"},
+                ],
+            }
+        }
+    )
+
+    class FakeMetadataClient:
+        def __init__(self) -> None:
+            self.mints: list[str] = []
+
+        def get_token_metadata(self, token_mint: str):
+            self.mints.append(token_mint)
+            return BagsToken(
+                mint=token_mint,
+                name=token_mint,
+                symbol=token_mint,
+                image_url=None,
+                launched_at=None,
+                creator=None,
+            )
+
+    metadata_client = FakeMetadataClient()
+    client = BagsClient(
+        base_url="https://bags.test/api/v1",
+        metadata_client=metadata_client,
+    )
+    client._session = bags_session
+
+    assert [token.mint for token in client.list_tokens(limit=2)] == ["MintA", "MintB"]
+    assert metadata_client.mints == ["MintA", "MintB"]

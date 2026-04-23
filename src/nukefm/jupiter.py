@@ -14,6 +14,7 @@ class JupiterTokensClient:
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
         self._last_request_started_at = 0.0
+        self._exact_token_rows_by_mint: dict[str, dict | None] = {}
         self._session.headers.update(
             {
                 "accept": "application/json",
@@ -77,6 +78,9 @@ class JupiterTokensClient:
         )
 
     def _search_exact_token(self, token_mint: str) -> dict | None:
+        if token_mint in self._exact_token_rows_by_mint:
+            return self._exact_token_rows_by_mint[token_mint]
+
         response = None
         for attempt in range(6):
             elapsed_seconds = monotonic() - self._last_request_started_at
@@ -103,8 +107,10 @@ class JupiterTokensClient:
         for row in response.json():
             if row.get("id") != token_mint:
                 continue
+            self._exact_token_rows_by_mint[token_mint] = row
             return row
 
+        self._exact_token_rows_by_mint[token_mint] = None
         return None
 
     @staticmethod

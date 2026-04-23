@@ -153,7 +153,6 @@ img { max-width: 100%; display: block; }
 .meta-pill:hover {
   background: var(--clay-black);
   color: var(--white);
-  transform: rotateZ(-8deg) translateY(-80%);
   box-shadow: var(--hard-shadow);
 }
 
@@ -308,7 +307,6 @@ h2 {
 .sort-form button:hover {
   background: var(--clay-black);
   color: var(--white);
-  transform: rotateZ(-8deg) translateY(-80%);
   box-shadow: var(--hard-shadow);
 }
 
@@ -332,7 +330,6 @@ h2 {
 .toggle-chip:hover {
   background: var(--matcha-600);
   color: var(--white);
-  transform: rotateZ(-8deg) translateY(-80%);
   box-shadow: var(--hard-shadow);
 }
 
@@ -649,7 +646,6 @@ dt { margin-bottom: 0.4rem; }
 
 .copy-button:hover {
   background: var(--matcha-600);
-  transform: rotateZ(-8deg) translateY(-80%);
   box-shadow: var(--hard-shadow);
 }
 
@@ -682,7 +678,6 @@ dt { margin-bottom: 0.4rem; }
   background: var(--clay-black);
   color: var(--white);
   border-color: var(--clay-black);
-  transform: rotateZ(-8deg) translateY(-80%);
   box-shadow: var(--hard-shadow);
 }
 

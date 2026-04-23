@@ -1091,8 +1091,6 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     expected_orders = {
         ("market_liquidity", "asc"): ["MintA", "MintB", "MintC"],
         ("market_liquidity", "desc"): ["MintB", "MintA", "MintC"],
-        ("token", "asc"): ["MintA", "MintB", "MintC"],
-        ("token", "desc"): ["MintC", "MintB", "MintA"],
         ("state", "asc"): ["MintA", "MintB", "MintC"],
         ("state", "desc"): ["MintC", "MintB", "MintA"],
         ("predicted_nuke_percent", "asc"): ["MintA", "MintB", "MintC"],
@@ -1105,6 +1103,10 @@ def test_token_metrics_capture_and_sorting(tmp_path: Path) -> None:
     for (sort_by, sort_direction), expected_mints in expected_orders.items():
         sorted_cards = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)
         assert [card["mint"] for card in sorted_cards] == expected_mints
+
+    for removed_sort in ("token", "implied_price"):
+        with pytest.raises(ValueError, match="Unsupported token card sort field"):
+            market_store.list_token_cards(sort_by=removed_sort)
 
 
 def test_current_market_serialization_uses_trailing_24h_pm_volume(tmp_path: Path) -> None:

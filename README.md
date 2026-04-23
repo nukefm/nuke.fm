@@ -189,8 +189,8 @@ token-account creation, withdrawal broadcasts, and resolved-market revenue sweep
 - `GET /tokens/{mint}`
 
 The public token list and board support `sort_by` and `sort_direction` query parameters. Accepted
-`sort_by` values are `market_liquidity`, `dump_percentage`, `underlying_volume`, and
-`underlying_market_cap`.
+`sort_by` values are `state`, `predicted_nuke_percent`, `pm_volume`, `market_liquidity`,
+`underlying_volume`, and `underlying_market_cap`.
 
 The visible frontend question is dynamic:
 

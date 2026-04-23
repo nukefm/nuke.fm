@@ -17,7 +17,6 @@
     <label>
       Sort
       <select name="sort_by">
-        <option value="" {% if not sort_by %}selected{% endif %}>Launch order</option>
         {% for value, label in sort_options %}
         <option value="{{ value }}" {% if sort_by == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
@@ -45,10 +44,10 @@
         <th scope="col">State</th>
         <th scope="col">Predicted nuke %</th>
         <th scope="col">Implied price</th>
-        <th scope="col">PM volume</th>
+        <th scope="col">Prediction volume</th>
         <th scope="col">PM liquidity</th>
-        <th scope="col">Underlying volume</th>
-        <th scope="col">Underlying mktcap</th>
+        <th scope="col">Token volume</th>
+        <th scope="col">Token mktcap</th>
       </tr>
     </thead>
     <tbody>

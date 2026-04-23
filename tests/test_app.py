@@ -291,9 +291,12 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Implied by predicted market cap" not in page_response.text
     assert "Predicted nuke %" in page_response.text
     assert "PM liquidity" in page_response.text
-    assert "PM volume" in page_response.text
-    assert "Underlying volume" in page_response.text
-    assert "Underlying mktcap" in page_response.text
+    assert "Prediction volume" in page_response.text
+    assert "Token volume" in page_response.text
+    assert "Token mktcap" in page_response.text
+    assert "Launch order" not in page_response.text
+    assert 'option value="token"' not in page_response.text
+    assert 'option value="implied_price"' not in page_response.text
     assert "Implied price" in page_response.text
     assert "Expiry" not in page_response.text
     assert "sort_by=expiry" not in page_response.text
@@ -310,7 +313,10 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Signal waiting on seed" in toggle_response.text
     assert "Hide uninitialized" in toggle_response.text
 
-    asc_response = client.get("/?sort_by=token&sort_direction=asc&show_uninitialized=1")
+    removed_sort_response = client.get("/?sort_by=token&sort_direction=asc&show_uninitialized=1")
+    assert removed_sort_response.status_code == 400
+
+    asc_response = client.get("/?sort_by=state&sort_direction=asc&show_uninitialized=1")
     assert asc_response.status_code == 200
     assert asc_response.text.index("<span>ALPHA</span>") < asc_response.text.index("<span>GAMMA</span>")
     assert asc_response.text.index("<span>GAMMA</span>") < asc_response.text.index("<span>OMEGA</span>")
@@ -346,7 +352,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
     assert "What will GAMMA trade at by 2026-07-14?" in detail_response.text
-    assert "PM 24h volume" in detail_response.text
+    assert "Prediction 24h volume" in detail_response.text
     assert "Implied price" in detail_response.text
     assert "Token price vs implied price" in detail_response.text
     assert "snapshot-market-charts" not in detail_response.text

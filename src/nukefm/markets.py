@@ -28,15 +28,13 @@ from .weighted_pool import (
 
 
 TOKEN_CARD_SORT_OPTIONS = (
-    ("token", "Token"),
     ("state", "State"),
     ("predicted_nuke_percent", "Predicted nuke %"),
-    ("implied_price", "Implied price"),
     ("expiry", "Expiry"),
-    ("pm_volume", "PM volume"),
+    ("pm_volume", "Prediction volume"),
     ("market_liquidity", "Market liquidity"),
-    ("underlying_volume", "Underlying volume"),
-    ("underlying_market_cap", "Underlying market cap"),
+    ("underlying_volume", "Token volume"),
+    ("underlying_market_cap", "Token mktcap"),
 )
 TOKEN_CARD_SORT_FIELDS = {value for value, _ in TOKEN_CARD_SORT_OPTIONS}
 MARKET_CHART_INTERVAL_MINUTES = 5
@@ -1724,10 +1722,8 @@ class MarketStore:
         token_cards[:] = [token_card for _, token_card in valued_cards] + missing_cards
 
     @staticmethod
-    def _token_card_sort_value(token_card: dict, sort_by: str) -> Decimal | tuple[str, str] | tuple[int, str, str, str] | None:
+    def _token_card_sort_value(token_card: dict, sort_by: str) -> Decimal | tuple[int, str, str, str] | None:
         current_market = token_card["current_market"]
-        if sort_by == "token":
-            return (token_card["symbol"].casefold(), token_card["name"].casefold())
         if sort_by == "state":
             state_rank = {"open": 0, "awaiting_liquidity": 1, "halted": 2}
             return (
@@ -1738,8 +1734,6 @@ class MarketStore:
             )
         if sort_by == "predicted_nuke_percent":
             value = current_market["predicted_nuke_fraction"]
-        elif sort_by == "implied_price":
-            value = current_market["implied_price_usd"]
         elif sort_by == "expiry":
             value = current_market["expiry"]
         elif sort_by == "pm_volume":

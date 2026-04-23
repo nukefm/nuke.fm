@@ -208,7 +208,7 @@ chmod 755 "${git_dir}/hooks/post-receive"
 chown "${deploy_user}:${deploy_user}" "${git_dir}/hooks/post-receive"
 
 cat >/etc/sudoers.d/nukefm-deploy <<EOF
-${deploy_user} ALL=(root) NOPASSWD: /bin/systemctl restart ${service_name}, /bin/systemctl start ${service_name}, /bin/systemctl status ${service_name}
+${deploy_user} ALL=(root) NOPASSWD: /bin/systemctl restart ${service_name}, /bin/systemctl start ${service_name}, /bin/systemctl status ${service_name}, /bin/systemctl start ${refresh_timer_name}, /bin/systemctl start ${chart_timer_name}, /bin/systemctl start ${seed_timer_name}
 EOF
 chmod 440 /etc/sudoers.d/nukefm-deploy
 visudo -cf /etc/sudoers.d/nukefm-deploy

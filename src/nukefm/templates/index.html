@@ -53,7 +53,6 @@
         {{ sort_header("State", "state") }}
         {{ sort_header("Predicted nuke %", "predicted_nuke_percent") }}
         {{ sort_header("Implied price", "implied_price") }}
-        {{ sort_header("Expiry", "expiry") }}
         {{ sort_header("PM volume", "pm_volume") }}
         {{ sort_header("PM liquidity", "market_liquidity") }}
         {{ sort_header("Underlying volume", "underlying_volume") }}
@@ -86,7 +85,6 @@
           <small>Implied by predicted market cap</small>
         </td>
         <td>{{ usd_display(market.implied_price_usd) or "Pending" }}</td>
-        <td>{{ market.expiry or "Pending" }}</td>
         <td>{{ usd_display(market.pm_volume_24h_usdc) }}</td>
         <td>{{ usd_display(market.total_liquidity_usdc) or "Pending" }}</td>
         <td>{{ usd_display(market.underlying_volume_24h_usd) or "Pending" }}</td>

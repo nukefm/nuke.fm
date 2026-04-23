@@ -288,6 +288,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Underlying volume" in page_response.text
     assert "Underlying mktcap" in page_response.text
     assert "Implied price" in page_response.text
+    assert "Expiry" not in page_response.text
+    assert "sort_by=expiry" not in page_response.text
     assert "State" in page_response.text
     assert "Signal live" in page_response.text
     assert "Signal waiting on seed" in page_response.text

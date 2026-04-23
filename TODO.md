@@ -1,7 +1,7 @@
 # do now
 - [x] show icons for each memecoin
 - [x] initialise top 4 mkts by vol
-- use font color to distinguish positive from negative nuke values
+- [x] use font color to distinguish positive from negative nuke values
 
 # ignore for now
 - create trading bot (sub repo) which looks for 

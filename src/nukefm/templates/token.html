@@ -50,12 +50,12 @@
       </p>
     </article>
     <article class="decision-card">
-      <p class="decision-label">PM liquidity</p>
-      <p class="decision-value">{{ usd_display(market.total_liquidity_usdc) or "PM liquidity pending" }}</p>
+      <p class="decision-label">Prediction market liquidity</p>
+      <p class="decision-value">{{ usd_display(market.total_liquidity_usdc) or "Prediction market liquidity pending" }}</p>
       <p class="decision-copy">Current pool depth.</p>
     </article>
     <article class="decision-card">
-      <p class="decision-label">Prediction 24h volume</p>
+      <p class="decision-label">Prediction market 24h volume</p>
       <p class="decision-value">{{ usd_display(market.pm_volume_24h_usdc) }}</p>
       <p class="decision-copy">Trailing 24h prediction trades.</p>
     </article>

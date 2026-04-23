@@ -31,8 +31,8 @@ TOKEN_CARD_SORT_OPTIONS = (
     ("state", "State"),
     ("predicted_nuke_percent", "Predicted nuke %"),
     ("expiry", "Expiry"),
-    ("pm_volume", "Prediction volume"),
-    ("market_liquidity", "Market liquidity"),
+    ("pm_volume", "Prediction market volume"),
+    ("market_liquidity", "Prediction market liquidity"),
     ("underlying_volume", "Token volume"),
     ("underlying_market_cap", "Token mktcap"),
 )

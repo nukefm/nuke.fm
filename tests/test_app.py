@@ -290,8 +290,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "-265.85% from current price" in page_response.text
     assert "Implied by predicted market cap" not in page_response.text
     assert "Predicted nuke %" in page_response.text
-    assert "PM liquidity" in page_response.text
-    assert "Prediction volume" in page_response.text
+    assert "Prediction market liquidity" in page_response.text
+    assert "Prediction market volume" in page_response.text
     assert "Token volume" in page_response.text
     assert "Token mktcap" in page_response.text
     assert "Launch order" not in page_response.text
@@ -352,7 +352,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
     assert "What will GAMMA trade at by 2026-07-14?" in detail_response.text
-    assert "Prediction 24h volume" in detail_response.text
+    assert "Prediction market 24h volume" in detail_response.text
     assert "Implied price" in detail_response.text
     assert "Token price vs implied price" in detail_response.text
     assert "snapshot-market-charts" not in detail_response.text

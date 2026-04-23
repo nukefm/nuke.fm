@@ -314,7 +314,7 @@ def create_app(
         request: Request,
         sort_by: str | None = "underlying_market_cap",
         sort_direction: str = "desc",
-        show_uninitialized: bool = False,
+        show_uninitialized: bool = True,
     ):
         try:
             all_tokens = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)

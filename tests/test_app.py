@@ -288,13 +288,13 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Implied price" in page_response.text
     assert page_response.text.index("<span>ALPHA</span>") < page_response.text.index("<span>GAMMA</span>")
     assert "Scan which token markets are actionable right now." not in page_response.text
-    assert "OMEGA" not in page_response.text
-    assert "Show uninitialized" in page_response.text
+    assert "OMEGA" in page_response.text
+    assert "Hide uninitialized" in page_response.text
 
-    toggle_response = client.get("/?sort_by=market_liquidity&sort_direction=desc&show_uninitialized=1")
+    toggle_response = client.get("/?sort_by=market_liquidity&sort_direction=desc&show_uninitialized=0")
     assert toggle_response.status_code == 200
-    assert "OMEGA" in toggle_response.text
-    assert "Hide uninitialized" in toggle_response.text
+    assert "OMEGA" not in toggle_response.text
+    assert "Show uninitialized" in toggle_response.text
 
     detail_api_response = client.get("/v1/public/tokens/Mint333")
     assert detail_api_response.status_code == 200
@@ -349,7 +349,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "<svg" in favicon_response.text
 
 
-def test_board_toggle_stays_visible_when_all_markets_are_uninitialized(tmp_path: Path) -> None:
+def test_board_shows_uninitialized_markets_by_default_after_reset(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     log_path = tmp_path / "logs" / "app.log"
     settings = Settings(
@@ -408,6 +408,12 @@ def test_board_toggle_stays_visible_when_all_markets_are_uninitialized(tmp_path:
 
     page_response = client.get("/")
     assert page_response.status_code == 200
-    assert "No initialized markets in view" in page_response.text
-    assert "Show uninitialized" in page_response.text
+    assert "SEVEN" in page_response.text
+    assert "No initialized markets in view" not in page_response.text
+    assert "Hide uninitialized" in page_response.text
     assert 'option value="underlying_market_cap" selected' in page_response.text
+
+    filtered_response = client.get("/?show_uninitialized=0")
+    assert filtered_response.status_code == 200
+    assert "No initialized markets in view" in filtered_response.text
+    assert "Show uninitialized" in filtered_response.text

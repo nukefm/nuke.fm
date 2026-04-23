@@ -6,7 +6,7 @@
   <div class="board-summary">
     <p><strong>{{ tokens|length }}</strong> shown / {{ total_token_count }} total</p>
     {% if show_uninitialized %}
-    <a class="toggle-chip toggle-chip-active" href="/?{% if sort_by %}sort_by={{ sort_by }}&{% endif %}sort_direction={{ sort_direction }}">Hide uninitialized</a>
+    <a class="toggle-chip toggle-chip-active" href="/?show_uninitialized=0{% if sort_by %}&sort_by={{ sort_by }}{% endif %}&sort_direction={{ sort_direction }}">Hide uninitialized</a>
     {% else %}
     <a class="toggle-chip" href="/?show_uninitialized=1{% if sort_by %}&sort_by={{ sort_by }}{% endif %}&sort_direction={{ sort_direction }}">Show uninitialized</a>
     {% endif %}

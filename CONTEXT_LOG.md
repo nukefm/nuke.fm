@@ -64,6 +64,7 @@
 - The EC2 host now terminates TLS with Caddy for `nukefm.xyz` and keeps uvicorn private on `127.0.0.1:8000`; proxy headers are trusted only from the local reverse proxy.
 - `ops/ec2/sync-state.sh` must not restore the SQLite DB by default. Database restore is now an explicit `--with-db` action because a failed later secret import previously clobbered live state.
 - `ingest` must stay a catalog/metric refresh command. Do not create on-chain market liquidity accounts there; `sync-market-liquidity` owns that side effect so low treasury SOL cannot block public board freshness.
+- The board/API derive current market cap from token supply multiplied by canonical hourly `market_snapshots.reference_price_usd`, not directly from `token_metrics_snapshots.underlying_market_cap_usd`. Production therefore needs `nukefm-market-snapshots.timer` running `snapshot-markets`; the separate market-chart timer only populates token detail overlay charts.
 
 ## Live Data Dependencies
 

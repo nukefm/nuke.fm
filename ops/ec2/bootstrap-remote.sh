@@ -16,6 +16,8 @@ runtime_env="${shared_dir}/runtime.env"
 service_name="nukefm.service"
 refresh_service_name="nukefm-refresh.service"
 refresh_timer_name="nukefm-refresh.timer"
+market_snapshot_service_name="nukefm-market-snapshots.service"
+market_snapshot_timer_name="nukefm-market-snapshots.timer"
 chart_service_name="nukefm-market-charts.service"
 chart_timer_name="nukefm-market-charts.timer"
 seed_service_name="nukefm-seed-weekly.service"
@@ -107,6 +109,38 @@ OnUnitActiveSec=10m
 Persistent=true
 RandomizedDelaySec=60s
 Unit=${refresh_service_name}
+
+[Install]
+WantedBy=timers.target
+EOF
+
+cat >/etc/systemd/system/${market_snapshot_service_name} <<EOF
+[Unit]
+Description=Capture nuke.fm hourly 24h-median market snapshots
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${deploy_user}
+Group=${deploy_user}
+WorkingDirectory=${work_tree}
+Environment=HOME=${deploy_home}
+Environment=PATH=${deploy_home}/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=${runtime_env}
+ExecStart=${work_tree}/ops/ec2/run-job.sh snapshot-markets
+EOF
+
+cat >/etc/systemd/system/${market_snapshot_timer_name} <<EOF
+[Unit]
+Description=Run nuke.fm hourly 24h-median market snapshots
+
+[Timer]
+OnBootSec=4m
+OnUnitActiveSec=1h
+Persistent=true
+RandomizedDelaySec=2m
+Unit=${market_snapshot_service_name}
 
 [Install]
 WantedBy=timers.target
@@ -208,7 +242,7 @@ chmod 755 "${git_dir}/hooks/post-receive"
 chown "${deploy_user}:${deploy_user}" "${git_dir}/hooks/post-receive"
 
 cat >/etc/sudoers.d/nukefm-deploy <<EOF
-${deploy_user} ALL=(root) NOPASSWD: /bin/systemctl restart ${service_name}, /bin/systemctl start ${service_name}, /bin/systemctl status ${service_name}, /bin/systemctl start ${refresh_timer_name}, /bin/systemctl start ${chart_timer_name}, /bin/systemctl start ${seed_timer_name}
+${deploy_user} ALL=(root) NOPASSWD: /bin/systemctl restart ${service_name}, /bin/systemctl start ${service_name}, /bin/systemctl status ${service_name}, /bin/systemctl start ${refresh_timer_name}, /bin/systemctl start ${market_snapshot_timer_name}, /bin/systemctl start ${chart_timer_name}, /bin/systemctl start ${seed_timer_name}
 EOF
 chmod 440 /etc/sudoers.d/nukefm-deploy
 visudo -cf /etc/sudoers.d/nukefm-deploy
@@ -216,6 +250,7 @@ visudo -cf /etc/sudoers.d/nukefm-deploy
 systemctl daemon-reload
 systemctl enable ${service_name}
 systemctl enable ${refresh_timer_name}
+systemctl enable ${market_snapshot_timer_name}
 systemctl enable ${chart_timer_name}
 systemctl enable ${seed_timer_name}
 systemctl enable caddy

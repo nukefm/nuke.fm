@@ -81,6 +81,7 @@ fi
 ssh "${ssh_args[@]}" "${remote}" "\
 sudo systemctl restart nukefm.service && \
 sudo systemctl start nukefm-refresh.timer && \
+sudo systemctl start nukefm-market-snapshots.timer && \
 sudo systemctl start nukefm-market-charts.timer && \
 sudo systemctl start nukefm-seed-weekly.timer && \
 sudo systemctl status --no-pager nukefm.service"

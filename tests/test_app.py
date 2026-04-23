@@ -277,15 +277,17 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     page_response = client.get("/?sort_by=market_liquidity&sort_direction=desc")
     assert page_response.status_code == 200
     assert 'rel="icon" type="image/svg+xml" href="http://testserver/static/favicon.svg"' in page_response.text
-    assert 'href="/?show_uninitialized=1&sort_by=market_liquidity&sort_direction=asc"' not in page_response.text
-    assert 'href="/?show_uninitialized=1&sort_by=&sort_direction=desc"' in page_response.text
-    assert 'href="/?show_uninitialized=1&sort_by=token&sort_direction=asc"' in page_response.text
-    assert "down" in page_response.text
+    assert 'option value="market_liquidity" selected' in page_response.text
+    assert 'option value="desc" selected' in page_response.text
+    assert 'class="sort-heading' not in page_response.text
+    assert "Clear sort" not in page_response.text
     assert "$20.00" in page_response.text
     assert "$1.00" in page_response.text
     assert "$1,234.50" in page_response.text
     assert "$0.00000000045" in page_response.text
     assert "-265.85%" in page_response.text
+    assert "-265.85% from current price" in page_response.text
+    assert "Implied by predicted market cap" not in page_response.text
     assert "Predicted nuke %" in page_response.text
     assert "PM liquidity" in page_response.text
     assert "PM volume" in page_response.text
@@ -296,18 +298,18 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "sort_by=expiry" not in page_response.text
     assert "State" in page_response.text
     assert "Signal live" in page_response.text
-    assert "Signal waiting on seed" in page_response.text
     assert page_response.text.index("<span>ALPHA</span>") < page_response.text.index("<span>GAMMA</span>")
     assert "Scan which token markets are actionable right now." not in page_response.text
-    assert "OMEGA" in page_response.text
-    assert "Hide uninitialized" in page_response.text
+    assert "OMEGA" not in page_response.text
+    assert "Show uninitialized" in page_response.text
 
-    toggle_response = client.get("/?sort_by=market_liquidity&sort_direction=desc&show_uninitialized=0")
+    toggle_response = client.get("/?sort_by=market_liquidity&sort_direction=desc&show_uninitialized=1")
     assert toggle_response.status_code == 200
-    assert "OMEGA" not in toggle_response.text
-    assert "Show uninitialized" in toggle_response.text
+    assert "OMEGA" in toggle_response.text
+    assert "Signal waiting on seed" in toggle_response.text
+    assert "Hide uninitialized" in toggle_response.text
 
-    asc_response = client.get("/?sort_by=token&sort_direction=asc")
+    asc_response = client.get("/?sort_by=token&sort_direction=asc&show_uninitialized=1")
     assert asc_response.status_code == 200
     assert asc_response.text.index("<span>ALPHA</span>") < asc_response.text.index("<span>GAMMA</span>")
     assert asc_response.text.index("<span>GAMMA</span>") < asc_response.text.index("<span>OMEGA</span>")
@@ -365,7 +367,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "<svg" in favicon_response.text
 
 
-def test_board_shows_uninitialized_markets_by_default_after_reset(tmp_path: Path) -> None:
+def test_board_can_show_uninitialized_markets_after_reset(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     log_path = tmp_path / "logs" / "app.log"
     settings = Settings(
@@ -424,13 +426,13 @@ def test_board_shows_uninitialized_markets_by_default_after_reset(tmp_path: Path
 
     page_response = client.get("/")
     assert page_response.status_code == 200
-    assert "SEVEN" in page_response.text
-    assert "Signal waiting on seed" in page_response.text
-    assert "No initialized markets in view" not in page_response.text
-    assert "Hide uninitialized" in page_response.text
-    assert 'href="/?show_uninitialized=1&sort_by=&sort_direction=desc"' in page_response.text
+    assert "SEVEN" not in page_response.text
+    assert "No initialized markets in view" in page_response.text
+    assert "Show uninitialized" in page_response.text
 
-    filtered_response = client.get("/?show_uninitialized=0")
-    assert filtered_response.status_code == 200
-    assert "No initialized markets in view" in filtered_response.text
-    assert "Show uninitialized" in filtered_response.text
+    expanded_response = client.get("/?show_uninitialized=1")
+    assert expanded_response.status_code == 200
+    assert "SEVEN" in expanded_response.text
+    assert "Signal waiting on seed" in expanded_response.text
+    assert "No initialized markets in view" not in expanded_response.text
+    assert "Hide uninitialized" in expanded_response.text

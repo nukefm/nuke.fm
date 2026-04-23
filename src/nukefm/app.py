@@ -16,7 +16,7 @@ from .catalog import Catalog
 from .config import load_settings
 from .display import format_percent_table_display, format_usd_display, format_usd_table_display
 from .logging_utils import configure_logging
-from .markets import MarketStore
+from .markets import MarketStore, TOKEN_CARD_SORT_OPTIONS
 from .treasury import SolanaTreasury
 
 
@@ -106,9 +106,12 @@ def _resolve_treasury(request: Request) -> SolanaTreasury:
 
 
 def _token_card_sort_context(sort_by: str | None, sort_direction: str) -> dict:
+    board_sort_options = tuple((value, label) for value, label in TOKEN_CARD_SORT_OPTIONS if value != "expiry")
     return {
         "sort_by": "" if sort_by in (None, "") else sort_by,
         "sort_direction": (sort_direction or "desc").lower(),
+        "sort_options": board_sort_options,
+        "sort_directions": (("desc", "Descending"), ("asc", "Ascending")),
     }
 
 
@@ -314,7 +317,7 @@ def create_app(
         request: Request,
         sort_by: str | None = "underlying_market_cap",
         sort_direction: str = "desc",
-        show_uninitialized: bool = True,
+        show_uninitialized: bool = False,
     ):
         try:
             all_tokens = market_store.list_token_cards(sort_by=sort_by, sort_direction=sort_direction)

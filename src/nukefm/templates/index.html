@@ -81,14 +81,14 @@
           {% endif %}
         </td>
         <td class="nuke-cell">
-          <strong>{{ market.predicted_nuke_percent or "Pending" }}</strong>
+          <strong>{{ percent_table_display(market.predicted_nuke_percent) or "Pending" }}</strong>
           <small>Implied by predicted market cap</small>
         </td>
-        <td>{{ usd_display(market.implied_price_usd) or "Pending" }}</td>
-        <td>{{ usd_display(market.pm_volume_24h_usdc) }}</td>
-        <td>{{ usd_display(market.total_liquidity_usdc) or "Pending" }}</td>
-        <td>{{ usd_display(market.underlying_volume_24h_usd) or "Pending" }}</td>
-        <td>{{ usd_display(market.underlying_market_cap_usd) or "Pending" }}</td>
+        <td>{{ usd_table_display(market.implied_price_usd, preserve_tiny_price=true) or "Pending" }}</td>
+        <td>{{ usd_table_display(market.pm_volume_24h_usdc) }}</td>
+        <td>{{ usd_table_display(market.total_liquidity_usdc) or "Pending" }}</td>
+        <td>{{ usd_table_display(market.underlying_volume_24h_usd) or "Pending" }}</td>
+        <td>{{ usd_table_display(market.underlying_market_cap_usd) or "Pending" }}</td>
       </tr>
       {% endfor %}
     </tbody>

@@ -109,7 +109,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
                         dex_id="raydium",
                         price_usd=Decimal("1.5"),
                         liquidity_usd=Decimal("100"),
-                        volume_h24_usd=Decimal("10"),
+                        volume_h24_usd=Decimal("1234.5"),
                         market_cap_usd=Decimal("1000"),
                     )
                 ],
@@ -281,7 +281,11 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert 'href="/?show_uninitialized=1&sort_by=&sort_direction=desc"' in page_response.text
     assert 'href="/?show_uninitialized=1&sort_by=token&sort_direction=asc"' in page_response.text
     assert "down" in page_response.text
-    assert "$20" in page_response.text
+    assert "$20.00" in page_response.text
+    assert "$1.00" in page_response.text
+    assert "$1,234.50" in page_response.text
+    assert "$0.00000000045" in page_response.text
+    assert "-265.85%" in page_response.text
     assert "Predicted nuke %" in page_response.text
     assert "PM liquidity" in page_response.text
     assert "PM volume" in page_response.text

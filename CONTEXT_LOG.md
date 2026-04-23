@@ -84,3 +84,8 @@
 - Only one active market per token is frontend-visible. When that visible market's monitored price moves outside its configured range, the frontend rolls to a new successor market while the older market stays active, tradable, and publicly inspectable through `hidden_active_markets`.
 - The visible prompt is computed at read time as `Will {symbol} nuke by {x}% by {date}?` using the latest monitored price for that market rather than a permanently stored question string.
 - Pre-anchor legacy rows are migrated in place from real observed prices during initialization so existing `market_id` values and their derived liquidity deposit addresses survive deploys. Truly dead legacy rows with no observed price and no attached market state are pruned; address-assigned but still unfunded rows are parked off-frontend and then reactivated in place later when a real price finally becomes available.
+
+## Scalar LONG/SHORT Planning
+
+- The planned scalar market should initialize at `50c LONG / 50c SHORT` by using a symmetric log-space payout range around the market starting price. With the default 10x range multiple, `min_price_usd = starting_price_usd / 10` and `max_price_usd = starting_price_usd * 10`.
+- The planned rollover config should be named as a symmetric boundary, not as an upper-only threshold. `market_rollover_boundary_rate = 0.85` means rollover after the deterministic underlying-implied LONG rate stays either above `0.85` or below `1 - 0.85` for 24 hours.

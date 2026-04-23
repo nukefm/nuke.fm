@@ -8,19 +8,19 @@ Convert the current binary nuke market into one scalar price market lifecycle. T
 
 - Replace binary `yes`/`no` outcomes with scalar `long`/`short` outcomes everywhere they are exposed or persisted in newly migrated schema fields: pool reserves/weights, positions, trades, public/private API payloads, serializers, templates, chart labels, and tests.
 - Do not maintain `yes`/`no` API compatibility. Requests should use `long` or `short`, and obsolete binary naming should be deleted rather than wrapped.
-- Store `max_price_usd` on every market. Compute it at market creation as `starting_price_usd * market_max_price_multiple`.
-- Add `market_max_price_multiple` to config, defaulting to `10`.
+- Store `min_price_usd` and `max_price_usd` on every market. Compute them at market creation as `starting_price_usd / market_price_range_multiple` and `starting_price_usd * market_price_range_multiple`.
+- Add `market_price_range_multiple` to config, defaulting to `10`. The name should make clear that the range is symmetric around the starting price in log space, not only an upside cap.
 - Use the existing complete-set AMM shape, renamed around LONG/SHORT: `1 LONG + 1 SHORT = $1` of terminal collateral-backed payout.
-- Set initial AMM price from the deterministic payout rate implied by the market starting price, not a hard-coded 50/50 price.
+- Initialize every market at `50c LONG / 50c SHORT`. The payout function is centered so the starting underlying price is the fair midpoint of the scalar range.
 - Keep later liquidity deposits price-preserving by retuning weights after matched LONG/SHORT inventory is added.
 
 ## Log Payout Curve
 
-- Use `long_rate = ln(1 + resolution_price_usd / starting_price_usd) / ln(1 + max_price_usd / starting_price_usd)`.
+- Use `long_rate = (ln(resolution_price_usd) - ln(min_price_usd)) / (ln(max_price_usd) - ln(min_price_usd))`.
+- With symmetric default bounds, this is equivalent to `long_rate = 0.5 + ln(resolution_price_usd / starting_price_usd) / (2 * ln(market_price_range_multiple))`.
 - Clamp `long_rate` to `[0, 1]`, then set `short_rate = 1 - long_rate`.
-- With the default `max_price_usd = starting_price_usd * 10`, the curve maps `0x` start to `0c`, `1x` start to about `28.9c`, `2x` start to about `45.8c`, `5x` start to about `74.7c`, about `6.68x` start to `85c`, and `10x` start to `$1`.
-- Use the inverse curve for display: `implied_price_usd = starting_price_usd * (exp(long_price * ln(1 + max_price_usd / starting_price_usd)) - 1)`.
-- Do not add a lower lifecycle bound for this todo. The payout lower bound is already `price = 0`, where LONG pays `0` and SHORT pays `1`. A lower rollover rule would be a separate product decision about collapsed markets, not a solvency requirement.
+- With the default 10x symmetric range, the curve maps `0.1x` start to `0c`, about `0.316x` start to `25c`, `1x` start to `50c`, about `3.16x` start to `75c`, and `10x` start to `$1`.
+- Use the inverse curve for display: `implied_price_usd = exp(ln(min_price_usd) + long_price * (ln(max_price_usd) - ln(min_price_usd)))`.
 
 ## Settlement
 
@@ -33,10 +33,10 @@ Convert the current binary nuke market into one scalar price market lifecycle. T
 ## Rollover
 
 - Delete the old lower/upper rollover-range behavior as active logic.
-- Compute the deterministic LONG payout implied by each observed underlying snapshot using the same log curve.
-- Trigger successor creation only when the deterministic underlying-implied LONG payout remains above `market_rollover_long_rate_threshold` for 24 consecutive hours.
-- Add `market_rollover_long_rate_threshold` to config, defaulting to `0.85`.
-- With the default 10x max-price multiple, the `0.85` rollover threshold corresponds to about `6.68x` the market creation price.
+- Compute the deterministic LONG payout implied by each observed underlying snapshot using the same symmetric log curve.
+- Add `market_rollover_boundary_rate` to config, defaulting to `0.85`. This config is symmetric: the upper trigger is `long_rate >= market_rollover_boundary_rate`, and the lower trigger is `long_rate <= 1 - market_rollover_boundary_rate`.
+- Trigger successor creation only when the deterministic underlying-implied LONG payout remains outside those symmetric boundaries for 24 consecutive hours.
+- With the default 10x symmetric price range, the `0.85` upper boundary corresponds to about `5.01x` the market creation price, and the derived `0.15` lower boundary corresponds to about `0.20x` the market creation price.
 - When the trigger fires, create a successor market using the latest observed underlying price as its `starting_price_usd`.
 - Keep the old market active, tradable, and resolvable through the API, but hide it from the main frontend once superseded.
 
@@ -52,7 +52,7 @@ Convert the current binary nuke market into one scalar price market lifecycle. T
 
 ## Frontend And API
 
-- Add public serialization fields for `long_price_usd`, `short_price_usd`, `implied_price_usd`, `predicted_market_cap_usd`, `predicted_nuke_percent`, `max_price_usd`, and the expiry date.
+- Add public serialization fields for `long_price_usd`, `short_price_usd`, `implied_price_usd`, `predicted_market_cap_usd`, `predicted_nuke_percent`, `min_price_usd`, `max_price_usd`, and the expiry date.
 - Derive predicted market cap as `current_market_cap * implied_price / current_observed_price` when both current market cap and current observed price are available.
 - Derive predicted nuke percent as `1 - predicted_market_cap / current_market_cap`. Allow it to go negative when the scalar market implies upside.
 - Keep missing metric data explicit as `null`; do not synthesize current market cap, current price, or implied price.

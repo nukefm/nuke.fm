@@ -9,9 +9,10 @@ from loguru import logger
 from .accounts import AccountStore
 from .amounts import parse_usdc_amount
 from .app import create_app
+from .bags import BagsClient
 from .catalog import Catalog
 from .config import load_settings
-from .jupiter import JupiterGemsClient, JupiterTokensClient
+from .jupiter import JupiterTokensClient
 from .logging_utils import configure_logging
 from .markets import MarketStore
 from .settlement import JupiterChartsSettlementPriceClient
@@ -155,10 +156,15 @@ def main() -> None:
         )
         return
 
-    client = JupiterGemsClient(base_url=settings.jupiter_gems_base_url)
-    ingested_count = catalog.ingest_tokens(client.list_tokens(limit=arguments.limit))
+    jupiter_tokens_client = JupiterTokensClient(base_url=settings.jupiter_tokens_base_url)
+    bags_client = BagsClient(
+        base_url=settings.bags_api_base_url,
+        api_key=settings.bags_api_key,
+        metadata_client=jupiter_tokens_client,
+    )
+    ingested_count = catalog.ingest_tokens(bags_client.list_tokens(limit=arguments.limit))
     captured_metrics = market_store.capture_token_metrics(
-        JupiterTokensClient(base_url=settings.jupiter_tokens_base_url),
+        jupiter_tokens_client,
     )
     logger.info(
         "Ingested {} Bags tokens into the market catalog and refreshed {} token metric snapshots.",

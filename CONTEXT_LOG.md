@@ -17,9 +17,9 @@
 
 ## First Deliverable Implementation
 
-- The first shipped slice used a local SQLite catalog with FastAPI and Jinja templates. The live catalog now ingests Jupiter Bags gems rather than the older Bags launch-feed route so the board tracks tokens with meaningful market cap.
+- The first shipped slice used a local SQLite catalog with FastAPI and Jinja templates. Current catalog discovery uses Bags token mints as the source of truth and hydrates exact mints through Jupiter.
 - Current-market price, liquidity-address, reference-price, ATH, drawdown, and threshold fields remain explicitly `null` in the public API until the later AMM, liquidity, and settlement deliverables exist. They are not inferred or synthesized.
-- The older Bags launch-feed path was removed from normal ingestion after it proved less useful for market-cap-ranked discovery than the Jupiter Bags gems pool feed.
+- The older Jupiter Bags gems discovery path was removed because Jupiter should not be the source of truth for which tokens are Bags tokens.
 
 ## Private API And Treasury
 
@@ -39,8 +39,8 @@
 
 - The live public token-list order now lives in `MarketStore.list_token_cards()`, not in the catalog layer, so the same sort path can serve both `/v1/public/tokens` and `/`.
 - Token-level metrics are stored as snapshots in SQLite instead of being fetched during reads. That keeps the board deterministic and lets the operator refresh metrics explicitly with a CLI command.
-- Jupiter Bags gems is the board/catalog metric source because Bags' own frontend uses that pool feed for Bags launchpad market-cap discovery. Jupiter token search still backs per-market chart snapshots where an arbitrary current token price is needed.
-- Underlying volume is stored from the current metric source snapshot, while underlying market cap should come from an explicit reported market-cap field rather than being inferred at read time.
+- Bags pools is the board/catalog token-universe source. Jupiter token search backs exact-mint metadata hydration, token metric snapshots, and per-market chart snapshots.
+- Underlying volume is stored from the current metric source snapshot, while displayed current market cap is derived from token supply and the latest canonical hourly reference price.
 - Missing metrics stay `null` and are sorted last in both directions so absent data never dominates the board.
 - The EC2 deploy should install a 10-minute catalog/metric refresh timer. Weekly seeding alone is not enough, because stale token snapshots make market-cap sorting look broken even when the comparator is correct.
 
@@ -68,11 +68,13 @@
 
 ## Live Data Dependencies
 
+- Token discovery now uses the Bags pools API as the source of truth for eligible token mints. Jupiter Tokens v2 is only a hydrator for exact mint-address metadata/price/supply; do not switch discovery back to Jupiter token or pool feeds because token symbols are not unique.
 - Settlement snapshots now use Jupiter 15-minute USD price candles instead of Bitquery. That removes billing as an operational dependency and keeps the snapshot job aligned with the same market-data family already used for token metrics.
 - Settlement snapshots use finalized wall-clock hours. The first snapshot for a newly funded market is the hour ending at `floor(market_start)`, so a market opened mid-hour gets an immediate pre-open baseline instead of waiting for the next top-of-hour bucket.
 - The rolling 24h settlement median is intentionally not clipped to `market_start`. Early snapshots should reflect the full trailing underlying-token median, including pre-market trading, so the series opens against a real 24h context instead of an artificially shortened window.
 - Jupiter charts do not currently emit empty carry-forward candles for quiet periods. When a finalized hour has no candles in-range, the snapshot layer explicitly carries forward the last known price at or before that hour end.
 - Market-liquidity account creation is now retried on Solana RPC `429` responses, and the bulk account-creation path prioritizes already-open markets first so the frontend-visible seeded markets recover before the long tail of awaiting-liquidity markets.
+- Weekly market-cap auto-seeding ranks by the same displayable current market-cap basis as the frontend: latest token supply multiplied by the current market's latest hourly 24h-median reference price. Markets whose frontend mktcap is still `Pending` are intentionally ineligible for that ranking.
 
 ## Token Detail Charting
 

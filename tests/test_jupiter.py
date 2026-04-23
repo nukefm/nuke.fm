@@ -1,115 +1,131 @@
 from decimal import Decimal
 
-from nukefm.jupiter import JupiterGemsClient
+from nukefm.bags import BagsClient, BagsToken
+from nukefm.jupiter import JupiterTokensClient
 
 
 class FakeResponse:
     status_code = 200
 
-    def __init__(self, payload: dict) -> None:
+    def __init__(self, payload: object) -> None:
         self._payload = payload
 
     def raise_for_status(self) -> None:
         pass
 
-    def json(self) -> dict:
+    def json(self) -> object:
         return self._payload
 
 
 class FakeSession:
-    def __init__(self, payload: dict) -> None:
-        self._payload = payload
-        self.posts: list[dict] = []
+    def __init__(self, payloads_by_query: dict[str, object]) -> None:
+        self._payloads_by_query = payloads_by_query
+        self.gets: list[dict] = []
+        self.headers: dict[str, str] = {}
 
-    def post(self, url: str, *, json: dict, timeout: int) -> FakeResponse:
-        self.posts.append({"url": url, "json": json, "timeout": timeout})
-        return FakeResponse(self._payload)
+    def get(self, url: str, *, params: dict, timeout: int) -> FakeResponse:
+        self.gets.append({"url": url, "params": params, "timeout": timeout})
+        query = params.get("query")
+        payload = self._payloads_by_query[query] if query is not None else self._payloads_by_query["pools"]
+        return FakeResponse(payload)
 
 
-def test_jupiter_gems_client_parses_and_dedupes_bags_market_metrics() -> None:
-    payload = {
-        "recent": {
-            "pools": [
-                {
-                    "id": "low-pool",
-                    "dex": "bags.fun",
-                    "createdAt": "2026-04-23T01:00:00Z",
-                    "volume24h": 50,
-                    "baseAsset": {
-                        "id": "MintLow",
-                        "name": "Low",
-                        "symbol": "LOW",
-                        "icon": "https://example.test/low.png",
-                        "dev": "CreatorLow",
-                        "circSupply": 1000000000,
-                        "usdPrice": 0.000012,
-                        "liquidity": 5,
-                    },
-                },
-                {
-                    "id": "ignored-pool",
-                    "baseAsset": {
-                        "id": "MintTiny",
-                        "name": "Tiny",
-                        "symbol": "TINY",
-                        "circSupply": 1000000000,
-                        "usdPrice": 0.000009999,
-                    },
-                },
-            ]
-        },
-        "aboutToGraduate": {
-            "pools": [
-                {
-                    "id": "high-pool",
-                    "type": "bags.fun",
-                    "volume24h": 1250.5,
-                    "baseAsset": {
-                        "id": "MintHigh",
-                        "name": "High",
-                        "symbol": "HIGH",
-                        "firstPool": {"createdAt": "2026-04-22T01:00:00Z"},
-                        "circSupply": 1000000000,
-                        "usdPrice": "0.00005",
-                        "liquidity": 250,
-                    },
-                }
-            ]
-        },
-        "graduated": {
-            "pools": [
-                {
-                    "id": "older-high-pool",
-                    "type": "meteora-damm-v2",
-                    "volume24h": 900,
-                    "baseAsset": {
-                        "id": "MintHigh",
-                        "name": "High",
-                        "symbol": "HIGH",
-                        "circSupply": 1000000000,
-                        "usdPrice": "0.000045",
-                        "liquidity": 200,
-                    },
-                }
-            ]
-        },
+def test_jupiter_tokens_client_matches_exact_mint_for_metadata_and_metrics() -> None:
+    payloads = {
+        "MintExact": [
+            {
+                "id": "SymbolOnlyCollision",
+                "name": "Wrong",
+                "symbol": "EXACT",
+                "usdPrice": "9",
+            },
+            {
+                "id": "MintExact",
+                "name": "Exact Token",
+                "symbol": "EXACT",
+                "icon": "https://example.test/exact.png",
+                "dev": "Creator",
+                "circSupply": 1000000000,
+                "usdPrice": "0.00005",
+                "liquidity": 250,
+                "stats24h": {"buyVolume": "700", "sellVolume": "300"},
+                "launchpad": "bags.fun",
+                "graduatedPool": "exact-pool",
+                "firstPool": {"createdAt": "2026-04-22T01:00:00Z"},
+            },
+        ],
     }
-    client = JupiterGemsClient(base_url="https://datapi.test/v1", min_market_cap_usd=Decimal("10000"))
-    client._session = FakeSession(payload)
+    client = JupiterTokensClient(base_url="https://tokens.test/v2")
+    client._session = FakeSession(payloads)
 
-    assert [token.mint for token in client.list_tokens(limit=10)] == ["MintHigh", "MintLow"]
+    token = client.get_token_metadata("MintExact")
+    assert token is not None
+    assert token.mint == "MintExact"
+    assert token.name == "Exact Token"
+    assert token.symbol == "EXACT"
+    assert token.image_url == "https://example.test/exact.png"
+    assert token.launched_at == "2026-04-22T01:00:00Z"
+    assert token.creator == "Creator"
 
-    high_pair = client.list_token_pairs("MintHigh")[0]
-    assert high_pair.pair_address == "high-pool"
-    assert high_pair.market_cap_usd == Decimal("50000")
-    assert high_pair.token_supply == Decimal("1000000000")
-    assert high_pair.market_cap_kind == "circulating"
-    assert high_pair.volume_h24_usd == Decimal("1250.5")
-    assert high_pair.price_usd == Decimal("0.00005")
-    assert high_pair.liquidity_usd == Decimal("250")
-    assert client.list_token_pairs("MintTiny") == []
-    assert len(client._session.posts) == 1
-    assert client._session.posts[0]["json"]["recent"] == {
-        "launchpads": ["bags.fun"],
-        "minMcap": 10000.0,
-    }
+    pair = client.list_token_pairs("MintExact")[0]
+    assert pair.pair_address == "exact-pool"
+    assert pair.dex_id == "bags.fun"
+    assert pair.price_usd == Decimal("0.00005")
+    assert pair.liquidity_usd == Decimal("250")
+    assert pair.volume_h24_usd == Decimal("1000")
+    assert pair.market_cap_usd is None
+    assert pair.token_supply == Decimal("1000000000")
+    assert pair.market_cap_kind == "circulating"
+    assert all(call["params"]["query"] == "MintExact" for call in client._session.gets)
+
+
+def test_bags_client_uses_bags_mints_then_hydrates_from_jupiter() -> None:
+    bags_session = FakeSession(
+        {
+            "pools": {
+                "success": True,
+                "response": [
+                    {"tokenMint": "MintA", "dbcPoolKey": "PoolA"},
+                    {"tokenMint": "MintA", "dbcPoolKey": "DuplicatePoolA"},
+                    {"tokenMint": "MintB", "dbcPoolKey": "PoolB"},
+                ],
+            }
+        }
+    )
+
+    class FakeMetadataClient:
+        def __init__(self) -> None:
+            self.mints: list[str] = []
+
+        def get_token_metadata(self, token_mint: str):
+            self.mints.append(token_mint)
+            if token_mint == "MintB":
+                return None
+            return BagsToken(
+                mint=token_mint,
+                name="Alpha",
+                symbol="ALPHA",
+                image_url=None,
+                launched_at=None,
+                creator=None,
+            )
+
+    metadata_client = FakeMetadataClient()
+    client = BagsClient(
+        base_url="https://bags.test/api/v1",
+        api_key="test-key",
+        metadata_client=metadata_client,
+    )
+    client._session = bags_session
+
+    tokens = client.list_tokens(limit=10)
+
+    assert [token.mint for token in tokens] == ["MintA"]
+    assert metadata_client.mints == ["MintA", "MintB"]
+    assert bags_session.gets == [
+        {
+            "url": "https://bags.test/api/v1/solana/bags/pools",
+            "params": {"onlyMigrated": "false"},
+            "timeout": 30,
+        }
+    ]

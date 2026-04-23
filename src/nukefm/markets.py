@@ -854,7 +854,9 @@ class MarketStore:
                         markets.id,
                         markets.token_mint,
                         tokens.symbol,
-                        token_metrics_snapshots.underlying_market_cap_usd
+                        CAST(token_metrics_snapshots.token_supply AS REAL)
+                            * CAST(market_snapshots.reference_price_usd AS REAL)
+                            AS underlying_market_cap_usd
                     FROM tokens
                     JOIN markets
                       ON markets.id = (
@@ -875,8 +877,18 @@ class MarketStore:
                         ORDER BY latest_metrics.captured_at DESC
                         LIMIT 1
                      )
-                    WHERE token_metrics_snapshots.underlying_market_cap_usd IS NOT NULL
-                    ORDER BY CAST(token_metrics_snapshots.underlying_market_cap_usd AS REAL) DESC, markets.id ASC
+                    JOIN market_snapshots
+                      ON market_snapshots.market_id = markets.id
+                     AND market_snapshots.snapshot_hour = (
+                        SELECT latest_snapshot.snapshot_hour
+                        FROM market_snapshots AS latest_snapshot
+                        WHERE latest_snapshot.market_id = markets.id
+                        ORDER BY latest_snapshot.snapshot_hour DESC
+                        LIMIT 1
+                     )
+                    WHERE token_metrics_snapshots.token_supply IS NOT NULL
+                      AND market_snapshots.reference_price_usd IS NOT NULL
+                    ORDER BY underlying_market_cap_usd DESC, markets.id ASC
                     LIMIT ?
                 )
                 SELECT

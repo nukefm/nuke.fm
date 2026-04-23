@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,7 +29,8 @@ class Settings:
     deposit_master_seed_secret_name: str
     treasury_seed_secret_name: str
     jupiter_tokens_base_url: str = "https://api.jup.ag/tokens/v2"
-    jupiter_gems_base_url: str = "https://datapi.jup.ag/v1"
+    bags_api_base_url: str = "https://public-api-v2.bags.fm/api/v1"
+    bags_api_key: str | None = None
 
 
 def load_settings() -> Settings:
@@ -45,8 +47,9 @@ def load_settings() -> Settings:
         market_price_range_multiple=config["market_price_range_multiple"],
         market_rollover_boundary_rate=config["market_rollover_boundary_rate"],
         market_rollover_liquidity_transfer_fraction=config["market_rollover_liquidity_transfer_fraction"],
-        jupiter_gems_base_url=config.get("jupiter_gems_base_url", "https://datapi.jup.ag/v1").rstrip("/"),
         jupiter_tokens_base_url=config.get("jupiter_tokens_base_url", "https://api.jup.ag/tokens/v2").rstrip("/"),
+        bags_api_base_url=config.get("bags_api_base_url", "https://public-api-v2.bags.fm/api/v1").rstrip("/"),
+        bags_api_key=os.environ.get("BAGS_API_KEY"),
         solana_rpc_url=config["solana_rpc_url"],
         solana_usdc_mint=config["solana_usdc_mint"],
         secret_tool_service=config["secret_tool_service"],

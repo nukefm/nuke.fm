@@ -47,8 +47,9 @@ The frontend still publishes market state only. Wallet connection and trading st
 
 At a high level, the app now has seven moving parts.
 
-First, the ingestion command pulls Bags launchpad gems from Jupiter's pool data feed and stores
-token metadata in a local SQLite database.
+First, the ingestion command pulls canonical Bags token mints from the Bags pools API, hydrates
+each mint through Jupiter Tokens v2 by exact token address, and stores token metadata in a local
+SQLite database.
 
 Second, the catalog layer stores token metadata and market state, while the market lifecycle code
 creates missing visible markets from real observed prices during token-metric refreshes. On-chain
@@ -98,7 +99,7 @@ MVP. Important current constraints:
 - Python 3.13
 - `secret-tool` entries for the deposit master seed and treasury seed
 - network access to Jupiter charts for hourly settlement snapshot jobs
-- network access to Jupiter gems for board metrics and Jupiter token search for 5 minute market chart snapshot jobs
+- network access to the Bags pools API for token discovery and Jupiter Tokens v2 for exact-mint token hydration
 
 ## Commands
 
@@ -198,8 +199,8 @@ The visible frontend question is dynamic:
 
 `sync-token-metrics` now does double duty: it stores token metrics and creates any missing
 frontend-visible market using the current observed token price as the fixed market anchor.
-`ingest` uses the same Bags gems source, so the catalog and the market-cap sort are fed by the
-same ranking universe.
+`ingest` uses Bags as the source of truth for which token mints belong in the catalog. Jupiter is
+only used to hydrate those exact mint addresses with token metadata, price, volume, and supply.
 
 Deposits are reconciled from observed USDC token-account balance increases. That works cleanly at
 this stage because user deposit accounts are one-way funding addresses and the current MVP slice
@@ -208,9 +209,9 @@ does not sweep or trade from them yet.
 Market liquidity deposits use the same monotonic-balance reconciliation pattern, but they credit
 weighted-pool depth and market cash backing instead of a user cash balance.
 
-Weekly auto-seeds are different on purpose. They can open or deepen the top 10 current markets by
-captured underlying market cap without waiting for an observed on-chain deposit. When they do, the
-seed is recorded as explicit treasury debt that the operator can fund later with a matching
-treasury-funding entry.
+Weekly auto-seeds are different on purpose. They deepen the top current markets by the same derived
+underlying market cap the frontend displays: latest token supply multiplied by the latest hourly
+24h-median reference price. When they do, the seed is recorded as explicit treasury debt that the
+operator can fund later with a matching treasury-funding entry.
 
-If the Jupiter Bags gems route changes, update `jupiter_gems_base_url` in `config.json` without changing application code.
+If the Bags API route changes, update `bags_api_base_url` in `config.json` without changing application code.

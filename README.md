@@ -51,7 +51,8 @@ First, the ingestion command pulls Bags launchpad gems from Jupiter's pool data 
 token metadata in a local SQLite database.
 
 Second, the catalog layer stores token metadata and market state, while the market lifecycle code
-creates missing visible markets from real observed prices during token-metric refreshes.
+creates missing visible markets from real observed prices during token-metric refreshes. On-chain
+market liquidity account creation remains part of `sync-market-liquidity`, not ingestion.
 
 Third, the market engine stores a weighted YES/NO pool for each active market. Liquidity deposits
 mint equal YES and NO inventory into the pool, then retune the weights so the displayed YES/NO

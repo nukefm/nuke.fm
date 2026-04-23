@@ -61,6 +61,7 @@
 - Deploy updates are intentionally built around a bare git repo and `post-receive` hook on the host so normal code pushes stay one explicit step and do not depend on GitHub webhooks or Actions.
 - The EC2 host now terminates TLS with Caddy for `nukefm.xyz` and keeps uvicorn private on `127.0.0.1:8000`; proxy headers are trusted only from the local reverse proxy.
 - `ops/ec2/sync-state.sh` must not restore the SQLite DB by default. Database restore is now an explicit `--with-db` action because a failed later secret import previously clobbered live state.
+- `ingest` must stay a catalog/metric refresh command. Do not create on-chain market liquidity accounts there; `sync-market-liquidity` owns that side effect so low treasury SOL cannot block public board freshness.
 
 ## Live Data Dependencies
 

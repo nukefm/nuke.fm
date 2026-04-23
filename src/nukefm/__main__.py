@@ -160,7 +160,6 @@ def main() -> None:
     captured_metrics = market_store.capture_token_metrics(
         client,
     )
-    market_store.ensure_missing_market_liquidity_accounts(get_treasury())
     logger.info(
         "Ingested {} Bags tokens into the market catalog and refreshed {} token metric snapshots.",
         ingested_count,

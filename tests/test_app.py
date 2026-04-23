@@ -286,6 +286,9 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Underlying volume" in page_response.text
     assert "Underlying mktcap" in page_response.text
     assert "Implied price" in page_response.text
+    assert "State" in page_response.text
+    assert "Signal live" in page_response.text
+    assert "Signal waiting on seed" in page_response.text
     assert page_response.text.index("<span>ALPHA</span>") < page_response.text.index("<span>GAMMA</span>")
     assert "Scan which token markets are actionable right now." not in page_response.text
     assert "OMEGA" in page_response.text
@@ -409,6 +412,7 @@ def test_board_shows_uninitialized_markets_by_default_after_reset(tmp_path: Path
     page_response = client.get("/")
     assert page_response.status_code == 200
     assert "SEVEN" in page_response.text
+    assert "Signal waiting on seed" in page_response.text
     assert "No initialized markets in view" not in page_response.text
     assert "Hide uninitialized" in page_response.text
     assert 'option value="underlying_market_cap" selected' in page_response.text

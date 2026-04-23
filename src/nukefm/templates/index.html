@@ -42,6 +42,7 @@
     <thead>
       <tr>
         <th scope="col">Token</th>
+        <th scope="col">State</th>
         <th scope="col">Predicted nuke %</th>
         <th scope="col">Implied price</th>
         <th scope="col">Expiry</th>
@@ -61,6 +62,17 @@
             <small>{{ token.name }}</small>
           </a>
         </th>
+        <td>
+          {% if market.state == "awaiting_liquidity" %}
+          <span class="state-pill state-{{ market.state }}">Signal waiting on seed</span>
+          {% elif market.state == "open" %}
+          <span class="state-pill state-{{ market.state }}">Signal live</span>
+          {% elif market.state == "halted" %}
+          <span class="state-pill state-{{ market.state }}">Signal paused</span>
+          {% else %}
+          <span class="state-pill state-{{ market.state }}">Series closed</span>
+          {% endif %}
+        </td>
         <td class="nuke-cell">
           <strong>{{ market.predicted_nuke_percent or "Pending" }}</strong>
           <small>Implied by predicted market cap</small>

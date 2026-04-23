@@ -333,7 +333,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
 
     no_history_detail_response = client.get("/tokens/Mint111")
     assert no_history_detail_response.status_code == 200
-    assert "No chart history yet." in no_history_detail_response.text
+    assert "The 5 minute snapshot job will populate this overlay shortly after the market is live." in no_history_detail_response.text
+    assert "snapshot-market-charts" not in no_history_detail_response.text
 
     favicon_response = client.get("/static/favicon.svg")
     assert favicon_response.status_code == 200

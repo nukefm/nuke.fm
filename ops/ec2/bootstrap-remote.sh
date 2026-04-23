@@ -16,6 +16,8 @@ runtime_env="${shared_dir}/runtime.env"
 service_name="nukefm.service"
 refresh_service_name="nukefm-refresh.service"
 refresh_timer_name="nukefm-refresh.timer"
+chart_service_name="nukefm-market-charts.service"
+chart_timer_name="nukefm-market-charts.timer"
 seed_service_name="nukefm-seed-weekly.service"
 seed_timer_name="nukefm-seed-weekly.timer"
 
@@ -110,6 +112,38 @@ Unit=${refresh_service_name}
 WantedBy=timers.target
 EOF
 
+cat >/etc/systemd/system/${chart_service_name} <<EOF
+[Unit]
+Description=Capture nuke.fm 5-minute market chart snapshots
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${deploy_user}
+Group=${deploy_user}
+WorkingDirectory=${work_tree}
+Environment=HOME=${deploy_home}
+Environment=PATH=${deploy_home}/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=${runtime_env}
+ExecStart=${work_tree}/ops/ec2/run-job.sh snapshot-market-charts
+EOF
+
+cat >/etc/systemd/system/${chart_timer_name} <<EOF
+[Unit]
+Description=Run nuke.fm 5-minute market chart snapshots
+
+[Timer]
+OnBootSec=3m
+OnUnitActiveSec=5m
+Persistent=true
+RandomizedDelaySec=30s
+Unit=${chart_service_name}
+
+[Install]
+WantedBy=timers.target
+EOF
+
 cat >/etc/systemd/system/${seed_service_name} <<EOF
 [Unit]
 Description=Weekly nuke.fm top-market auto seed
@@ -182,6 +216,7 @@ visudo -cf /etc/sudoers.d/nukefm-deploy
 systemctl daemon-reload
 systemctl enable ${service_name}
 systemctl enable ${refresh_timer_name}
+systemctl enable ${chart_timer_name}
 systemctl enable ${seed_timer_name}
 systemctl enable caddy
 systemctl restart caddy

@@ -119,7 +119,7 @@ MVP. Important current constraints:
 
 The repo now includes a minimal EC2 deploy path under [`ops/ec2`](ops/ec2):
 
-- `bootstrap-host.sh` installs the host prerequisites, configures Caddy for `https://nukefm.xyz`, creates `/srv/nukefm`, installs a systemd service, and creates a bare git repo with a `post-receive` hook.
+- `bootstrap-host.sh` installs the host prerequisites, configures Caddy for `https://nukefm.xyz`, creates `/srv/nukefm`, installs the systemd service and refresh timers, and creates a bare git repo with a `post-receive` hook.
 - `push-production.sh` pushes the current local `HEAD` to that bare repo as `main`.
 - `sync-state.sh` copies `.env` and imports the two `secret-tool` seeds into the remote host.
 - `sync-state.sh --with-db` additionally restores `data/nukefm.sqlite3` as an explicit operator action.

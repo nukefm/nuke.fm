@@ -88,4 +88,6 @@
 ## Scalar LONG/SHORT Planning
 
 - The planned scalar market should initialize at `50c LONG / 50c SHORT` by using a symmetric log-space payout range around the market starting price. With the default 10x range multiple, `min_price_usd = starting_price_usd / 10` and `max_price_usd = starting_price_usd * 10`.
-- The planned rollover config should be named as a symmetric boundary, not as an upper-only threshold. `market_rollover_boundary_rate = 0.85` means rollover after the deterministic underlying-implied LONG rate stays either above `0.85` or below `1 - 0.85` for 24 hours.
+- The planned rollover config should be named as a symmetric boundary, not as an upper-only threshold. `market_rollover_boundary_rate = 0.85` means rollover when the deterministic underlying-implied LONG rate from a stored 24h-median snapshot touches either `0.85` or `1 - 0.85`; no separate 24-hour consecutive-streak rule should be added because the rolling 24h median is the intended stability filter.
+- Existing binary YES/NO market state should be destructively reset rather than migrated into scalar LONG/SHORT state, because current YES means downside/nuke exposure while scalar LONG means upside price exposure.
+- Scalar market cap display should not ingest reported market cap directly. Use token supply and observed price to derive current and predicted market cap so the price basis stays consistent.

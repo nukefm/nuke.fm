@@ -1,63 +1,21 @@
 {% extends "base.html" %}
 
 {% block content %}
-{% set counts = namespace(awaiting=0, open=0, halted=0) %}
-{% for token in tokens %}
-  {% set market = token.current_market %}
-  {% if market.state == "awaiting_liquidity" %}
-    {% set counts.awaiting = counts.awaiting + 1 %}
-  {% elif market.state == "open" %}
-    {% set counts.open = counts.open + 1 %}
-  {% elif market.state == "halted" %}
-    {% set counts.halted = counts.halted + 1 %}
-  {% endif %}
-{% endfor %}
-
-<section class="hero hero-grid">
-  <div class="hero-copy-block">
-    <p class="eyebrow">Token Risk Board</p>
-    <h1>Scan which token markets are actionable right now.</h1>
-    <p class="hero-copy">
-      Use the board to find which Bags tokens already have a live PM signal, which ones still need
-      a first seed, and which pages are worth opening for a deeper risk read before you trade the token.
-    </p>
-  </div>
-  <aside class="hero-panel">
-    <div class="hero-panel-header">
-      <p class="panel-kicker">Board Snapshot</p>
-      <p class="panel-caption">Fast state read across the current market set.</p>
-    </div>
-    <dl class="hero-stats">
-      <div>
-        <dt>Shown Tokens</dt>
-        <dd>{{ tokens|length }}</dd>
-      </div>
-      <div>
-        <dt>Signal Live</dt>
-        <dd>{{ counts.open }}</dd>
-      </div>
-      <div>
-        <dt>Hidden Uninit</dt>
-        <dd>{{ hidden_uninitialized_count }}</dd>
-      </div>
-      <div>
-        <dt>Signal Paused</dt>
-        <dd>{{ counts.halted }}</dd>
-      </div>
-    </dl>
-  </aside>
-</section>
-
 {% if total_token_count > 0 %}
-<section class="section-heading">
-  <div>
-    <p class="eyebrow">Current Markets</p>
-    <h2>Open the token pages that matter</h2>
+<section class="board-controls">
+  <div class="board-summary">
+    <p><strong>{{ tokens|length }}</strong> shown / {{ total_token_count }} total</p>
+    {% if show_uninitialized %}
+    <a class="toggle-chip toggle-chip-active" href="/?{% if sort_by %}sort_by={{ sort_by }}&{% endif %}sort_direction={{ sort_direction }}">Hide uninitialized</a>
+    {% else %}
+    <a class="toggle-chip" href="/?show_uninitialized=1{% if sort_by %}&sort_by={{ sort_by }}{% endif %}&sort_direction={{ sort_direction }}">Show uninitialized</a>
+    {% endif %}
   </div>
-  <form method="get">
+
+  <form class="sort-form" method="get">
     <input type="hidden" name="show_uninitialized" value="{% if show_uninitialized %}1{% else %}0{% endif %}">
     <label>
-      Sort by
+      Sort
       <select name="sort_by">
         <option value="" {% if not sort_by %}selected{% endif %}>Launch order</option>
         {% for value, label in sort_options %}
@@ -75,105 +33,44 @@
     </label>
     <button type="submit">Apply</button>
   </form>
-  <div class="board-toggle-row">
-    {% if show_uninitialized %}
-    <a class="toggle-chip toggle-chip-active" href="/?{% if sort_by %}sort_by={{ sort_by }}&{% endif %}sort_direction={{ sort_direction }}">Hide uninitialized</a>
-    {% else %}
-    <a class="toggle-chip" href="/?show_uninitialized=1{% if sort_by %}&sort_by={{ sort_by }}{% endif %}&sort_direction={{ sort_direction }}">Show uninitialized</a>
-    {% endif %}
-    <p class="section-copy">
-      {% if show_uninitialized %}
-      Showing all current markets, including pages that have not started yet.
-      {% else %}
-      Default view shows only initialized markets. {{ hidden_uninitialized_count }} uninitialized markets are hidden until you reveal them.
-      {% endif %}
-    </p>
-  </div>
 </section>
 {% endif %}
 
 {% if tokens %}
-<section class="market-grid">
-  {% for token in tokens %}
-  {% set market = token.current_market %}
-  {% if market.state == "awaiting_liquidity" %}
-    {% set trader_state = "Waiting on seed" %}
-    {% set trader_state_note = "PM signal not live yet." %}
-  {% elif market.state == "open" %}
-    {% set trader_state = "Signal live" %}
-    {% set trader_state_note = "PM signal is producing a live read." %}
-  {% elif market.state == "halted" %}
-    {% set trader_state = "Signal paused" %}
-    {% set trader_state_note = "Review before treating it as actionable." %}
-  {% else %}
-    {% set trader_state = "Series closed" %}
-    {% set trader_state_note = "Historical context only." %}
-  {% endif %}
-  <a class="market-card" href="/tokens/{{ token.mint }}">
-    <div class="market-card-top">
-      <div class="market-card-token">
-        <div class="token-identity-row">
-          {% if token.image_url %}
-          <img class="token-avatar" src="{{ token.image_url }}" alt="{{ token.name }} token image">
-          {% endif %}
-          <div>
-            <p class="symbol-badge">{{ token.symbol }}</p>
-            <h2>{{ token.name }}</h2>
-          </div>
-        </div>
-        <p class="market-question">{{ market.question }}</p>
-      </div>
-      <span class="state-pill state-{{ market.state }}">{{ trader_state }}</span>
-    </div>
-
-    <p class="market-state-note">{{ trader_state_note }}</p>
-
-    <section class="decision-strip decision-strip-compact">
-      <article class="decision-card decision-card-primary">
-        <p class="decision-label">Chance of nuke</p>
-        <p class="decision-value">{{ market.chance_of_outcome_percent or "Not live yet" }}</p>
-        <p class="decision-copy">
-          {% if market.liquidity_deposit_address %}
-          Derived from the live market price.
-          {% else %}
-          Opens with the first funded seed.
-          {% endif %}
-        </p>
-      </article>
-      <article class="decision-card">
-        <p class="decision-label">PM liquidity</p>
-        <p class="decision-value">{{ usd_display(market.total_liquidity_usdc) or "PM liquidity pending" }}</p>
-        <p class="decision-copy">Current pool depth.</p>
-      </article>
-      <article class="decision-card">
-        <p class="decision-label">PM 24h volume</p>
-        <p class="decision-value">{{ usd_display(market.pm_volume_24h_usdc) }}</p>
-        <p class="decision-copy">Trailing 24h PM trades.</p>
-      </article>
-      <article class="decision-card">
-        <p class="decision-label">Token cap</p>
-        <p class="decision-value">{{ usd_display(market.underlying_market_cap_usd) or "Market cap pending" }}</p>
-        <p class="decision-copy">Underlying token market cap.</p>
-      </article>
-    </section>
-
-    <p class="market-mint">
-      <span>Liquidity Deposit</span>
-      <code title="{{ market.liquidity_deposit_address or 'Unassigned' }}">
-        {% if market.liquidity_deposit_address %}
-          {{ market.liquidity_deposit_address[:10] }}...{{ market.liquidity_deposit_address[-8:] }}
-        {% else %}
-          Pending
-        {% endif %}
-      </code>
-    </p>
-
-    <div class="market-card-footer">
-      <span>Open token brief</span>
-      <span class="arrow">→</span>
-    </div>
-  </a>
-  {% endfor %}
+<section class="token-board" aria-label="Current token markets">
+  <table class="token-table">
+    <thead>
+      <tr>
+        <th scope="col">Token</th>
+        <th scope="col">Predicted nuke %</th>
+        <th scope="col">PM volume</th>
+        <th scope="col">PM liquidity</th>
+        <th scope="col">Underlying volume</th>
+        <th scope="col">Underlying mktcap</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for token in tokens %}
+      {% set market = token.current_market %}
+      <tr>
+        <th scope="row">
+          <a class="token-link" href="/tokens/{{ token.mint }}">
+            <span>{{ token.symbol }}</span>
+            <small>{{ token.name }}</small>
+          </a>
+        </th>
+        <td class="nuke-cell">
+          <strong>{{ market.chance_of_outcome_percent or "Not live" }}</strong>
+          <small>{{ market.remaining_drop_percent }} from current price</small>
+        </td>
+        <td>{{ usd_display(market.pm_volume_24h_usdc) }}</td>
+        <td>{{ usd_display(market.total_liquidity_usdc) or "Pending" }}</td>
+        <td>{{ usd_display(market.underlying_volume_24h_usd) or "Pending" }}</td>
+        <td>{{ usd_display(market.underlying_market_cap_usd) or "Pending" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </section>
 {% else %}
 <section class="empty-state">

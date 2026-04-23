@@ -125,15 +125,15 @@ code {
 dt,
 time,
 .section-copy,
-.hero-copy,
-.market-mint span,
+.board-summary,
+.token-link small,
+.nuke-cell small,
 .panel-caption {
   color: var(--muted);
 }
 
 .meta-pill,
-.state-pill,
-.symbol-badge {
+.state-pill {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
@@ -151,27 +151,17 @@ time,
   width: fit-content;
 }
 
-.hero,
-.hero-panel,
 .detail-card,
-.market-card,
+.token-board,
 .empty-state {
   position: relative;
   background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px);
 }
 
-.hero,
-.hero-panel,
-.detail-card,
-.market-card,
-.empty-state {
-  border-radius: var(--radius-lg);
-}
-
-.hero,
 .detail-card,
 .empty-state {
   padding: 1.6rem;
@@ -181,25 +171,6 @@ time,
   display: grid;
   gap: 1rem;
   margin-bottom: 1rem;
-}
-
-.hero-grid,
-.detail-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.85fr);
-  gap: 1.1rem;
-  align-items: stretch;
-  margin-bottom: 1.35rem;
-}
-
-.hero {
-  min-height: 100%;
-}
-
-.hero-copy-block {
-  display: grid;
-  gap: 0.9rem;
-  align-content: start;
 }
 
 .eyebrow,
@@ -216,7 +187,6 @@ h1,
 h2,
 .headline-question,
 .market-question,
-.hero-stats dd,
 .metric-grid dd {
   margin: 0;
 }
@@ -228,13 +198,11 @@ h1,
   letter-spacing: -0.04em;
 }
 
-.hero h1,
 .detail-heading h1 {
   font-size: clamp(2.8rem, 5vw, 5rem);
   max-width: 11ch;
 }
 
-.hero-copy,
 .section-copy,
 .market-question,
 .activity-list p,
@@ -242,37 +210,15 @@ h1,
   line-height: 1.55;
 }
 
-.hero-copy {
-  max-width: 38rem;
-  font-size: 1.02rem;
-}
-
-.hero-panel,
 .compact-panel {
   padding: 1.25rem;
 }
 
-.hero-panel {
-  display: grid;
-  gap: 1rem;
-}
-
-.hero-panel-header {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.hero-stats,
 .metric-grid {
   display: grid;
   gap: 0.75rem;
 }
 
-.hero-stats {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.hero-stats div,
 .metric-grid div {
   padding: 0.9rem;
   border-radius: var(--radius-md);
@@ -280,25 +226,55 @@ h1,
   border: 1px solid var(--line);
 }
 
-.hero-stats dd {
-  font-size: 1.7rem;
-  font-weight: 700;
-  line-height: 1;
-  margin-top: 0.4rem;
-}
-
-.section-heading {
+.board-controls {
   display: flex;
   justify-content: space-between;
-  gap: 1.5rem;
-  align-items: end;
-  margin: 0.75rem 0 1rem;
+  gap: 1rem;
+  align-items: center;
+  margin: 0.4rem 0 1rem;
 }
 
-.board-toggle-row {
-  display: grid;
-  gap: 0.55rem;
-  justify-items: start;
+.board-summary,
+.sort-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.board-summary p {
+  margin: 0;
+}
+
+.sort-form {
+  justify-content: flex-end;
+}
+
+.sort-form label {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.sort-form select,
+.sort-form button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+}
+
+.sort-form select {
+  padding: 0.45rem 1.8rem 0.45rem 0.75rem;
+}
+
+.sort-form button {
+  padding: 0.48rem 0.85rem;
+  cursor: pointer;
 }
 
 .toggle-chip {
@@ -321,8 +297,8 @@ h1,
   color: var(--accent);
 }
 
-.section-heading h2,
 .detail-card h2 {
+  font-family: "Space Grotesk", "Aptos", sans-serif;
   font-size: 1.5rem;
   letter-spacing: -0.03em;
 }
@@ -332,31 +308,72 @@ h1,
   margin: 0;
 }
 
-.market-grid,
 .detail-layout {
   display: grid;
   gap: 1rem;
 }
 
-.market-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.token-board {
+  overflow-x: auto;
 }
 
-.market-card {
+.token-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.token-table th,
+.token-table td {
+  padding: 1rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.token-table thead th {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.token-table tbody th {
+  width: 18rem;
+}
+
+.token-table tbody tr:last-child th,
+.token-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.token-table tbody tr {
+  transition: background 160ms ease;
+}
+
+.token-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.token-link,
+.nuke-cell {
   display: grid;
-  gap: 1rem;
-  padding: 1.2rem;
-  min-height: 100%;
-  transition:
-    transform 180ms ease,
-    box-shadow 180ms ease,
-    border-color 180ms ease;
-  animation: card-enter 420ms ease both;
+  gap: 0.16rem;
 }
 
-.market-card::before,
-.detail-card::before,
-.hero-panel::before {
+.token-link span,
+.nuke-cell strong {
+  font-size: 1.08rem;
+  letter-spacing: -0.02em;
+}
+
+.token-link small,
+.nuke-cell small {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.detail-card::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -365,25 +382,11 @@ h1,
   pointer-events: none;
 }
 
-.market-card:hover {
-  transform: translateY(-5px);
-  border-color: rgba(191, 90, 49, 0.22);
-  box-shadow: 0 26px 70px rgba(31, 34, 22, 0.14);
-}
-
-.market-card-top,
-.market-card-footer,
 .detail-state-wrap {
   display: flex;
   justify-content: space-between;
   gap: 0.9rem;
   align-items: flex-start;
-}
-
-.market-card-token {
-  min-width: 0;
-  display: grid;
-  gap: 0.35rem;
 }
 
 .token-identity-row {
@@ -411,23 +414,6 @@ h1,
 
 .token-identity-row-lg {
   align-items: flex-start;
-}
-
-.market-card h2,
-.detail-card h2 {
-  font-family: "Space Grotesk", "Aptos", sans-serif;
-}
-
-.market-card h2 {
-  font-size: 1.35rem;
-  letter-spacing: -0.04em;
-}
-
-.symbol-badge {
-  width: fit-content;
-  padding: 0.35rem 0.55rem;
-  color: var(--accent);
-  background: rgba(191, 90, 49, 0.08);
 }
 
 .state-pill {
@@ -493,10 +479,6 @@ h1,
   gap: 0.75rem;
 }
 
-.decision-strip-compact {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .decision-card {
   display: grid;
   gap: 0.32rem;
@@ -534,64 +516,6 @@ h1,
   line-height: 1.45;
 }
 
-.market-card-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.market-brief-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem;
-}
-
-.brief-card {
-  display: grid;
-  gap: 0.3rem;
-  padding: 0.85rem 0.9rem;
-  border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.58);
-  border: 1px solid var(--line);
-}
-
-.brief-card dt {
-  margin: 0;
-}
-
-.brief-card dd {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.35;
-  font-weight: 700;
-}
-
-.brief-card p {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.45;
-  font-size: 0.86rem;
-}
-
-.market-mint {
-  display: grid;
-  gap: 0.2rem;
-  margin: 0;
-}
-
-.market-mint code {
-  display: inline-block;
-  width: fit-content;
-  max-width: 100%;
-  padding: 0.45rem 0.6rem;
-  border-radius: 0.8rem;
-  background: rgba(23, 35, 28, 0.05);
-  font-size: 0.82rem;
-  overflow-wrap: anywhere;
-}
-
-.full-mint code {
-  width: 100%;
-}
-
 .metric-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -606,18 +530,6 @@ dt {
 .metric-grid dd {
   font-size: 0.94rem;
   line-height: 1.4;
-}
-
-.market-card-footer {
-  margin-top: auto;
-  padding-top: 0.15rem;
-  color: var(--muted);
-  font-size: 0.88rem;
-}
-
-.arrow {
-  font-size: 1.1rem;
-  line-height: 1;
 }
 
 .back-link {
@@ -640,15 +552,6 @@ dt {
   gap: 1rem;
   justify-content: space-between;
   align-items: flex-start;
-}
-
-.detail-hero-v2 {
-  align-items: stretch;
-}
-
-.detail-hero-main {
-  display: grid;
-  gap: 1rem;
 }
 
 .detail-action-card {
@@ -860,10 +763,6 @@ dt {
   align-items: start;
 }
 
-.detail-hero {
-  align-items: start;
-}
-
 .detail-heading h1 {
   max-width: none;
 }
@@ -876,27 +775,6 @@ dt {
 
 .detail-heading .token-name {
   font-size: 0.92rem;
-}
-
-.market-card .market-question {
-  max-width: 28ch;
-  font-size: 1.08rem;
-}
-
-.market-card .market-state-note {
-  font-size: 0.94rem;
-}
-
-.market-card .brief-card {
-  min-height: 100%;
-}
-
-.market-card .brief-card dd {
-  font-size: 0.92rem;
-}
-
-.full-mint code {
-  font-size: 0.76rem;
 }
 
 .empty-state {
@@ -930,28 +808,9 @@ dt {
   height: 100%;
 }
 
-@keyframes card-enter {
-  from {
-    opacity: 0;
-    transform: translateY(18px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (max-width: 1120px) {
-  .market-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 820px) {
   .site-header,
-  .section-heading,
-  .hero-grid,
-  .detail-hero,
+  .board-controls,
   .detail-layout {
     grid-template-columns: 1fr;
     display: grid;
@@ -966,8 +825,10 @@ dt {
     display: none;
   }
 
-  .market-brief-grid {
-    grid-template-columns: 1fr;
+  .board-controls,
+  .sort-form {
+    align-items: start;
+    justify-content: start;
   }
 
   .decision-strip {
@@ -982,14 +843,9 @@ dt {
     justify-items: start;
   }
 
-  .hero h1,
   .detail-heading h1 {
     max-width: none;
     font-size: clamp(2.15rem, 9vw, 3.25rem);
-  }
-
-  .section-heading {
-    align-items: start;
   }
 
   .detail-topline,
@@ -997,10 +853,6 @@ dt {
   .ops-banner,
   .detail-section-heading {
     display: grid;
-  }
-
-  .market-grid {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -1021,7 +873,6 @@ dt {
 
   .tagline,
   .meta-note,
-  .hero-copy,
   .market-state-note,
   .availability-note,
   .summary-copy,
@@ -1029,38 +880,25 @@ dt {
     font-size: 0.92rem;
   }
 
-  .hero,
-  .hero-panel,
   .detail-card,
-  .market-card,
+  .token-board,
   .empty-state {
     border-radius: 1.35rem;
   }
 
-  .hero,
   .detail-card,
-  .market-card,
-  .empty-state,
-  .hero-panel {
+  .empty-state {
     padding: 1rem;
   }
 
-  .hero-stats,
   .metric-grid,
-  .decision-strip,
-  .decision-strip-compact {
+  .decision-strip {
     grid-template-columns: 1fr;
   }
 
   .action-meta-grid,
-  .summary-pair-list,
-  .market-card-grid {
+  .summary-pair-list {
     grid-template-columns: 1fr;
-  }
-
-  .market-card-top,
-  .market-card-footer {
-    display: grid;
   }
 
   .address-row {
@@ -1093,9 +931,5 @@ dt {
   .detail-code-strip code,
   .address-block {
     font-size: 0.78rem;
-  }
-
-  .brief-card {
-    padding: 0.8rem 0.85rem;
   }
 }

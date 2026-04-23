@@ -269,13 +269,14 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert 'option value="market_liquidity" selected' in page_response.text
     assert 'option value="desc" selected' in page_response.text
     assert "$20" in page_response.text
+    assert "Predicted nuke %" in page_response.text
     assert "PM liquidity" in page_response.text
-    assert "PM 24h volume" in page_response.text
-    assert "Token cap" in page_response.text
-    assert page_response.text.index("<p class=\"symbol-badge\">ALPHA</p>") < page_response.text.index(
-        "<p class=\"symbol-badge\">GAMMA</p>"
-    )
-    assert "Scan which token markets are actionable right now." in page_response.text
+    assert "PM volume" in page_response.text
+    assert "Underlying volume" in page_response.text
+    assert "Underlying mktcap" in page_response.text
+    assert "63.41% from current price" in page_response.text
+    assert page_response.text.index("<span>ALPHA</span>") < page_response.text.index("<span>GAMMA</span>")
+    assert "Scan which token markets are actionable right now." not in page_response.text
     assert "OMEGA" not in page_response.text
     assert "Show uninitialized" in page_response.text
 

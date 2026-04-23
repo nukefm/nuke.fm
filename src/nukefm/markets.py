@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
@@ -261,9 +262,11 @@ class MarketStore:
         self,
         metrics_client: DexScreenerPairClient,
         *,
+        token_mints: Collection[str] | None = None,
         captured_at: str | None = None,
     ) -> list[dict]:
         captured_timestamp = captured_at or utc_now()
+        included_token_mints = None if token_mints is None else set(token_mints)
 
         with connect_database(self._database_path) as connection:
             token_rows = connection.execute(
@@ -276,6 +279,9 @@ class MarketStore:
             captured_rows: list[dict] = []
 
             for row in token_rows:
+                if included_token_mints is not None and row["mint"] not in included_token_mints:
+                    continue
+
                 pairs = metrics_client.list_token_pairs(row["mint"])
                 underlying_volume = self._sum_pair_volume(pairs)
                 price_pair = self._most_liquid_pair_with_price(pairs)

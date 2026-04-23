@@ -162,9 +162,11 @@ def main() -> None:
         api_key=settings.bags_api_key,
         metadata_client=jupiter_tokens_client,
     )
-    ingested_count = catalog.ingest_tokens(bags_client.list_tokens(limit=arguments.limit))
+    ingested_tokens = bags_client.list_tokens(limit=arguments.limit)
+    ingested_count = catalog.ingest_tokens(ingested_tokens)
     captured_metrics = market_store.capture_token_metrics(
         jupiter_tokens_client,
+        token_mints=[token.mint for token in ingested_tokens],
     )
     logger.info(
         "Ingested {} Bags tokens into the market catalog and refreshed {} token metric snapshots.",

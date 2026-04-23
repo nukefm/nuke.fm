@@ -1,6 +1,7 @@
 import sys
 
 from nukefm import __main__
+from nukefm.bags import BagsToken
 
 
 def test_serve_enables_local_proxy_headers(monkeypatch) -> None:
@@ -148,8 +149,9 @@ def test_sync_token_metrics_uses_jupiter_tokens_client(monkeypatch) -> None:
         def initialize(self) -> None:
             captured["market_initialized"] = True
 
-        def capture_token_metrics(self, client) -> list[dict]:
+        def capture_token_metrics(self, client, **kwargs) -> list[dict]:
             captured["metrics_client"] = client
+            captured["metrics_kwargs"] = kwargs
             return [{"mint": "MintTop"}]
 
     def fake_load_settings():
@@ -190,6 +192,7 @@ def test_sync_token_metrics_uses_jupiter_tokens_client(monkeypatch) -> None:
     assert captured["market_initialized"] is True
     assert captured["tokens_base_url"] == "https://tokens.test/v2"
     assert captured["metrics_client"] == "fake-tokens-client"
+    assert captured["metrics_kwargs"] == {}
 
 
 def test_ingest_uses_bags_mints_and_jupiter_hydration(monkeypatch) -> None:
@@ -228,8 +231,9 @@ def test_ingest_uses_bags_mints_and_jupiter_hydration(monkeypatch) -> None:
         def initialize(self) -> None:
             captured["market_initialized"] = True
 
-        def capture_token_metrics(self, client) -> list[dict]:
+        def capture_token_metrics(self, client, **kwargs) -> list[dict]:
             captured["metrics_client"] = client
+            captured["metrics_kwargs"] = kwargs
             return [{"mint": "MintTop"}]
 
     def fake_load_settings():
@@ -264,7 +268,10 @@ def test_ingest_uses_bags_mints_and_jupiter_hydration(monkeypatch) -> None:
 
         def list_tokens(self, *, limit: int):
             captured["bags_limit"] = limit
-            return ["token-a", "token-b"]
+            return [
+                BagsToken("MintA", "Token A", "TKNA", None, None, None),
+                BagsToken("MintB", "Token B", "TKNB", None, None, None),
+            ]
 
     monkeypatch.setattr(__main__, "load_settings", fake_load_settings)
     monkeypatch.setattr(__main__, "configure_logging", fake_configure_logging)
@@ -282,5 +289,6 @@ def test_ingest_uses_bags_mints_and_jupiter_hydration(monkeypatch) -> None:
     assert captured["bags_api_key"] == "bags-key"
     assert captured["bags_metadata_client"] == "fake-jupiter-client"
     assert captured["bags_limit"] == 2
-    assert captured["ingested_tokens"] == ["token-a", "token-b"]
+    assert [token.mint for token in captured["ingested_tokens"]] == ["MintA", "MintB"]
     assert captured["metrics_client"] == "fake-jupiter-client"
+    assert captured["metrics_kwargs"] == {"token_mints": ["MintA", "MintB"]}

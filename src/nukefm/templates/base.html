@@ -3,25 +3,20 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>nuke.fm</title>
+    <title>nuke.fm — Prediction Markets for Bags Tokens</title>
+    <meta name="description" content="Offchain prediction markets for Bags tokens settling in Solana USDC. Track nuke probabilities, market liquidity, and token metrics.">
     <link rel="icon" type="image/svg+xml" href="{{ request.url_for('static', path='favicon.svg') }}">
     <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}">
   </head>
   <body>
-    <div class="page-backdrop" aria-hidden="true">
-      <div class="backdrop-orb orb-a"></div>
-      <div class="backdrop-orb orb-b"></div>
-      <div class="backdrop-grid"></div>
-    </div>
     <div class="page-shell">
       <header class="site-header">
         <div class="brand-block">
-          <a class="brand" href="/">nuke.fm</a>
-          <p class="tagline">Compact trading brief for Bags token traders.</p>
+          <a class="brand" href="/">☢ nuke.fm</a>
         </div>
         <div class="site-status">
-          <span class="meta-pill">Read-only frontend</span>
-          <p class="meta-note">Private account actions stay in the API.</p>
+          <span class="meta-pill">Read-only</span>
+          <p class="meta-note">Trading stays in the API.</p>
         </div>
       </header>
       <main>

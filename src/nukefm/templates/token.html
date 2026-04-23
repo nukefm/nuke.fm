@@ -119,137 +119,73 @@
   {% endif %}
 </section>
 
-<section class="detail-layout detail-layout-balanced">
-  <article class="detail-card">
-    <div class="detail-section-heading">
-      <div>
-        <p class="eyebrow">Signal Map</p>
-        <h2>What the PM is saying</h2>
-      </div>
-      <p class="section-copy">The levels that matter once the market is live.</p>
+<article class="detail-card">
+  <div class="detail-section-heading">
+    <div>
+      <p class="eyebrow">Series metadata</p>
+      <h2>Market context</h2>
     </div>
-    <dl class="metric-grid detail-metric-grid">
-      <div>
-        <dt>Chance of nuke</dt>
-        <dd>{{ market.chance_of_outcome_percent or "Not live yet" }}</dd>
-      </div>
-      <div>
-        <dt>Current token price</dt>
-        <dd>{{ usd_display(market.reference_price_usd) or "No snapshot yet" }}</dd>
-      </div>
-      <div>
-        <dt>Nuke threshold</dt>
-        <dd>{{ usd_display(market.threshold_price_usd) or "No threshold yet" }}</dd>
-      </div>
-      <div>
-        <dt>Current gap to nuke</dt>
-        <dd>{{ market.remaining_drop_percent }}</dd>
-      </div>
-      <div>
-        <dt>Range floor</dt>
-        <dd>{{ usd_display(market.range_floor_price_usd) }}</dd>
-      </div>
-      <div>
-        <dt>Range ceiling</dt>
-        <dd>{{ usd_display(market.range_ceiling_price_usd) }}</dd>
-      </div>
-      <div>
-        <dt>Expiry</dt>
-        <dd>{{ market.expiry or "Not started" }}</dd>
-      </div>
-    </dl>
-  </article>
+    <p class="section-copy">Lifecycle details and launch context that stay useful even when the signal is paused.</p>
+  </div>
+  <dl class="metric-grid detail-metric-grid">
+    <div>
+      <dt>Series</dt>
+      <dd>{{ market.sequence_number }}</dd>
+    </div>
+    <div>
+      <dt>Starting price</dt>
+      <dd>{{ usd_display(market.starting_price_usd) }}</dd>
+    </div>
+    <div>
+      <dt>Market Start</dt>
+      <dd>{{ market.market_start or "Starts after first liquidity deposit" }}</dd>
+    </div>
+    <div>
+      <dt>Expiry</dt>
+      <dd>{{ market.expiry or "Not started" }}</dd>
+    </div>
+    <div>
+      <dt>Liquidity Deposit</dt>
+      <dd>{{ market.liquidity_deposit_address or "Pending assignment" }}</dd>
+    </div>
+    <div>
+      <dt>Launch Feed</dt>
+      <dd>{{ token.launched_at or "Unavailable" }}</dd>
+    </div>
+    <div>
+      <dt>Creator</dt>
+      <dd>{{ token.creator or "Unavailable" }}</dd>
+    </div>
+  </dl>
+</article>
 
-  <article class="detail-card">
-    <div class="detail-section-heading">
-      <div>
-        <p class="eyebrow">Series metadata</p>
-        <h2>Market context</h2>
-      </div>
-      <p class="section-copy">Lifecycle details and launch context that stay useful even when the signal is paused.</p>
+<article class="detail-card">
+  <div class="detail-section-heading">
+    <div>
+      <p class="eyebrow">Ops</p>
+      <h2>Series mechanics</h2>
     </div>
-    <dl class="metric-grid detail-metric-grid">
-      <div>
-        <dt>Series</dt>
-        <dd>{{ market.sequence_number }}</dd>
-      </div>
-      <div>
-        <dt>Starting price</dt>
-        <dd>{{ usd_display(market.starting_price_usd) }}</dd>
-      </div>
-      <div>
-        <dt>Market Start</dt>
-        <dd>{{ market.market_start or "Starts after first liquidity deposit" }}</dd>
-      </div>
-      <div>
-        <dt>Expiry</dt>
-        <dd>{{ market.expiry or "Not started" }}</dd>
-      </div>
-      <div>
-        <dt>Liquidity Deposit</dt>
-        <dd>{{ market.liquidity_deposit_address or "Pending assignment" }}</dd>
-      </div>
-      <div>
-        <dt>Launch Feed</dt>
-        <dd>{{ token.launched_at or "Unavailable" }}</dd>
-      </div>
-      <div>
-        <dt>Creator</dt>
-        <dd>{{ token.creator or "Unavailable" }}</dd>
-      </div>
-    </dl>
-  </article>
-</section>
-
-<section class="detail-layout detail-layout-balanced">
-  <article class="detail-card">
-    <div class="detail-section-heading">
-      <div>
-        <p class="eyebrow">Ops</p>
-        <h2>Series mechanics</h2>
-      </div>
-      <p class="section-copy">Operational state that explains why the signal is or is not usable right now.</p>
+    <p class="section-copy">Operational state that explains why the signal is or is not usable right now.</p>
+  </div>
+  <dl class="metric-grid detail-metric-grid">
+    <div>
+      <dt>State</dt>
+      <dd>{{ trader_state }}</dd>
     </div>
-    <dl class="metric-grid detail-metric-grid">
-      <div>
-        <dt>State</dt>
-        <dd>{{ trader_state }}</dd>
-      </div>
-      <div>
-        <dt>Market Start</dt>
-        <dd>{{ market.market_start or "Starts after first liquidity deposit" }}</dd>
-      </div>
-      <div>
-        <dt>Liquidity Deposit</dt>
-        <dd>{{ market.liquidity_deposit_address or "Pending assignment" }}</dd>
-      </div>
-      <div>
-        <dt>Resolved At</dt>
-        <dd>{{ market.resolved_at or "Unresolved" }}</dd>
-      </div>
-    </dl>
-  </article>
-
-  <article class="detail-card">
-    <div class="detail-section-heading">
-      <div>
-        <p class="eyebrow">Flow</p>
-        <h2>Recent activity</h2>
-      </div>
-      <p class="section-copy">The latest state changes that shaped the current read.</p>
+    <div>
+      <dt>Market Start</dt>
+      <dd>{{ market.market_start or "Starts after first liquidity deposit" }}</dd>
     </div>
-    <ul class="activity-list activity-list-tight">
-      {% for activity in token.recent_activity %}
-      <li>
-        <div>
-          <p>{{ activity.summary }}</p>
-          <time>{{ activity.timestamp }}</time>
-        </div>
-      </li>
-      {% endfor %}
-    </ul>
-  </article>
-</section>
+    <div>
+      <dt>Liquidity Deposit</dt>
+      <dd>{{ market.liquidity_deposit_address or "Pending assignment" }}</dd>
+    </div>
+    <div>
+      <dt>Resolved At</dt>
+      <dd>{{ market.resolved_at or "Unresolved" }}</dd>
+    </div>
+  </dl>
+</article>
 
 <section class="detail-card">
   <div class="detail-section-heading">
@@ -275,7 +211,7 @@
   {% endif %}
 </section>
 
-<section class="detail-card">
+<section class="detail-card" style="margin-top: 1.25rem;">
   <div class="detail-section-heading">
     <div>
       <p class="eyebrow">History</p>
@@ -331,8 +267,8 @@
             label: "Token price",
             data: overlayPoints.map((point) => Number(point.underlying_price_usd)),
             yAxisID: "price",
-            borderColor: "#215c3b",
-            backgroundColor: "rgba(33, 92, 59, 0.14)",
+            borderColor: "#078a52",
+            backgroundColor: "rgba(7, 138, 82, 0.08)",
             borderWidth: 2,
             pointRadius: overlayPoints.length > 1 ? 0 : 3,
             pointHoverRadius: 4,
@@ -342,8 +278,8 @@
             label: "Chance of nuke",
             data: overlayPoints.map((point) => Number(point.chance_of_outcome_percent)),
             yAxisID: "chance",
-            borderColor: "#bf5a31",
-            backgroundColor: "rgba(191, 90, 49, 0.14)",
+            borderColor: "#fc7981",
+            backgroundColor: "rgba(252, 121, 129, 0.08)",
             borderWidth: 2,
             pointRadius: overlayPoints.length > 1 ? 0 : 3,
             pointHoverRadius: 4,
@@ -364,10 +300,15 @@
             labels: {
               usePointStyle: true,
               boxWidth: 10,
-              color: "#17231c",
+              color: "#000000",
+              font: { family: "'Inter', Arial, sans-serif", size: 13 },
             },
           },
           tooltip: {
+            backgroundColor: "#000000",
+            titleFont: { family: "'Inter', Arial, sans-serif" },
+            bodyFont: { family: "'Space Mono', monospace", size: 12 },
+            cornerRadius: 12,
             callbacks: {
               label(context) {
                 if (context.dataset.yAxisID === "chance") {
@@ -380,11 +321,10 @@
         },
         scales: {
           x: {
-            grid: {
-              color: "rgba(23, 35, 28, 0.05)",
-            },
+            grid: { color: "rgba(218, 212, 200, 0.4)" },
             ticks: {
-              color: "#5f6a61",
+              color: "#9f9b93",
+              font: { family: "'Space Mono', monospace", size: 11 },
               maxRotation: 0,
               autoSkip: true,
               maxTicksLimit: 6,
@@ -393,14 +333,11 @@
           price: {
             type: "linear",
             position: "left",
-            grid: {
-              color: "rgba(33, 92, 59, 0.08)",
-            },
+            grid: { color: "rgba(7, 138, 82, 0.08)" },
             ticks: {
-              color: "#215c3b",
-              callback(value) {
-                return formatUsd(value);
-              },
+              color: "#078a52",
+              font: { family: "'Space Mono', monospace", size: 11 },
+              callback(value) { return formatUsd(value); },
             },
           },
           chance: {
@@ -408,14 +345,11 @@
             position: "right",
             min: 0,
             max: 100,
-            grid: {
-              drawOnChartArea: false,
-            },
+            grid: { drawOnChartArea: false },
             ticks: {
-              color: "#bf5a31",
-              callback(value) {
-                return `${numberFormatter.format(value)}%`;
-              },
+              color: "#fc7981",
+              font: { family: "'Space Mono', monospace", size: 11 },
+              callback(value) { return `${numberFormatter.format(value)}%`; },
             },
           },
         },

@@ -380,6 +380,14 @@ h2 {
 
 .token-link, .nuke-cell { display: grid; gap: 0.2rem; }
 
+.token-link-with-avatar {
+  grid-template-columns: 3rem minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0.75rem;
+}
+
+.token-link-with-avatar .token-avatar { grid-row: span 2; }
+
 .token-link span, .nuke-cell strong {
   font-size: 1.05rem;
   font-weight: 600;

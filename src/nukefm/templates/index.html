@@ -55,7 +55,10 @@
       {% set market = token.current_market %}
       <tr>
         <th scope="row">
-          <a class="token-link" href="/tokens/{{ token.mint }}">
+          <a class="token-link{% if token.image_url %} token-link-with-avatar{% endif %}" href="/tokens/{{ token.mint }}">
+            {% if token.image_url %}
+            <img class="token-avatar" src="{{ token.image_url }}" alt="{{ token.name }} token image">
+            {% endif %}
             <span>{{ token.symbol }}</span>
             <small>{{ token.name }}</small>
           </a>

@@ -75,7 +75,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
                 mint="Mint111",
                 name="Alpha",
                 symbol="ALPHA",
-                image_url=None,
+                image_url="https://example.test/alpha.png",
                 launched_at="2026-04-14T12:00:00+00:00",
                 creator=None,
             ),
@@ -302,6 +302,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "sort_by=expiry" not in page_response.text
     assert "State" in page_response.text
     assert "Signal live" in page_response.text
+    assert '<img class="token-avatar" src="https://example.test/alpha.png" alt="Alpha token image">' in page_response.text
     assert page_response.text.index("<span>ALPHA</span>") < page_response.text.index("<span>GAMMA</span>")
     assert "Scan which token markets are actionable right now." not in page_response.text
     assert "OMEGA" not in page_response.text

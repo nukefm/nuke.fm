@@ -425,6 +425,13 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert detail_response.status_code == 200
     assert "What will GAMMA trade at by 2026-07-14?" in detail_response.text
     assert "By 14 Jul" in detail_response.text
+    assert "2026-07-14T12:00:00+00:00" not in detail_response.text
+    assert "Live PM signal based on market price" in detail_response.text
+    assert "5 minute snapshots of token price and PM implied price." in detail_response.text
+    assert "Market lifecycle and Bags launch context." in detail_response.text
+    assert "The PM is live. Compare" not in detail_response.text
+    assert "Aligned 5 minute snapshots" not in detail_response.text
+    assert "Lifecycle details and Bags launch context that stay useful" not in detail_response.text
     assert "Prediction 24h volume" in detail_response.text
     assert "Implied price" in detail_response.text
     assert "Token price vs PM implied price" in detail_response.text

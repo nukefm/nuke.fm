@@ -9,7 +9,7 @@
   {% set trader_state_note = "This Bags market is staged with a scalar LONG/SHORT price range. Trading opens after the first funded liquidity deposit." %}
 {% elif market.state == "open" %}
   {% set trader_state = "Signal live" %}
-  {% set trader_state_note = "The PM is live. Compare the market-implied terminal price with the latest 24h-median Bags token price before acting." %}
+  {% set trader_state_note = "Live PM signal based on market price, liquidity, and the latest 24h-median Bags token price." %}
 {% elif market.state == "halted" %}
   {% set trader_state = "Signal paused" %}
   {% set trader_state_note = "Trading is halted. Use the last captured 24h-median Bags token price, implied price, and activity trail as context, not as a fresh live read." %}
@@ -85,7 +85,7 @@
       <p class="eyebrow">Overlay</p>
       <h2>Token price vs PM implied price</h2>
     </div>
-    <p class="section-copy">Aligned 5 minute snapshots for the current Bags series, with separate axes for token price and market signal.</p>
+    <p class="section-copy">5 minute snapshots of token price and PM implied price.</p>
   </div>
   {% if chart.points %}
   <div class="chart-shell">
@@ -105,7 +105,7 @@
       <p class="eyebrow">Bags context</p>
       <h2>Series details</h2>
     </div>
-    <p class="section-copy">Lifecycle details and Bags launch context that stay useful when the signal is paused.</p>
+    <p class="section-copy">Market lifecycle and Bags launch context.</p>
   </div>
   <dl class="metric-grid detail-metric-grid">
     <div>
@@ -126,7 +126,7 @@
     </div>
     <div>
       <dt>Expiry</dt>
-      <dd>{{ market.expiry or "Not started" }}</dd>
+      <dd>{{ short_deadline(market.expiry) or "Not started" }}</dd>
     </div>
     <div>
       <dt>Liquidity deposit</dt>

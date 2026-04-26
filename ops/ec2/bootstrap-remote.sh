@@ -221,6 +221,7 @@ deploy_home="${deploy_home}"
 
 export HOME="\${deploy_home}"
 export PATH="\${deploy_home}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+unset GIT_DIR GIT_WORK_TREE
 
 git --work-tree="\${work_tree}" --git-dir="\${git_dir}" checkout -f main
 rm -f "\${work_tree}/.git"

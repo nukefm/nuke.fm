@@ -1,10 +1,7 @@
 # do now
-- improve wording
-- fix token page / simplify / increase signal to noise
-- add link in table to each token's bags.fm token page 
-- create trading bot (sub repo) which looks for 
-- create claude skill for bot
-- correct mkt prices
-- add "by 14th may" (i.e. the expiry date) to the table in a way that is visually clear/intuitive
 
 # ignore for now
+- create tweet thread explaining how the app works, tag bags founders and other people in the tweet thread
+- update about page, gh repo description and also readme to make it coherent
+- create script for video
+- demo Video - Short video (3-5 minutes) demonstrating the project in action

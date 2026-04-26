@@ -49,7 +49,6 @@ class AccountStore:
                     key_prefix TEXT NOT NULL,
                     key_hash TEXT NOT NULL UNIQUE,
                     created_at TEXT NOT NULL,
-                    last_used_at TEXT,
                     revoked_at TEXT
                 );
 
@@ -173,8 +172,8 @@ class AccountStore:
         with connect_database(self._database_path) as connection:
             api_key_id = connection.execute(
                 """
-                INSERT INTO api_keys (user_id, key_prefix, key_hash, created_at, last_used_at, revoked_at)
-                VALUES (?, ?, ?, ?, NULL, NULL)
+                INSERT INTO api_keys (user_id, key_prefix, key_hash, created_at, revoked_at)
+                VALUES (?, ?, ?, ?, NULL)
                 RETURNING id
                 """,
                 [user_id, raw_api_key[:12], key_hash, created_at],
@@ -188,7 +187,6 @@ class AccountStore:
 
     def authenticate_api_key(self, raw_api_key: str) -> AuthenticatedUser | None:
         key_hash = hashlib.sha256(raw_api_key.encode("utf-8")).hexdigest()
-        timestamp = utc_now()
         with connect_database(self._database_path) as connection:
             row = connection.execute(
                 """
@@ -206,10 +204,6 @@ class AccountStore:
             if row is None:
                 return None
 
-            connection.execute(
-                "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
-                [timestamp, row["api_key_id"]],
-            )
             return AuthenticatedUser(
                 user_id=row["user_id"],
                 wallet_address=row["wallet_address"],

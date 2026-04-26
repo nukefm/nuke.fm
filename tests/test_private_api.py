@@ -241,6 +241,23 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     assert buy_trade_response.status_code == 200
     assert buy_trade_response.json()["amount_usdc"] == "3"
 
+    rationale_response = client.post(
+        "/v1/private/tokens/Mint444/rationale",
+        headers=headers,
+        json={
+            "forecast_price_usd": "1.6",
+            "confidence": "0.72",
+            "rationale": "Liquidity is thin, but the Bags tape still has enough bid support for a higher expiry print.",
+            "sources": ["https://bags.fm/Mint444"],
+        },
+    )
+    assert rationale_response.status_code == 200
+    assert rationale_response.json()["rationale"].startswith("Liquidity is thin")
+    assert rationale_response.json()["position_value_usdc"] != "0"
+
+    public_detail_response = client.get("/v1/public/tokens/Mint444")
+    assert public_detail_response.json()["rationales"] == [rationale_response.json()]
+
     positions_response = client.get("/v1/private/account/positions", headers=headers)
     assert positions_response.status_code == 200
     assert positions_response.json()["positions"][0]["long_shares"] != "0"

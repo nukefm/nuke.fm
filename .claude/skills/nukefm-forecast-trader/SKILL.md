@@ -1,6 +1,6 @@
 ---
 name: nukefm-forecast-trader
-description: Use when acting as a nuke.fm trading bot from Claude without running the Python bot code. Covers fetching Bags scalar markets, forecasting expiry price with web research, converting the forecast into a LONG/SHORT target, quoting trades, enforcing risk caps, and submitting private API trades.
+description: Use when acting as a nuke.fm trading bot from Claude without running the Python bot code. Covers fetching Bags scalar markets, forecasting expiry price with web research, submitting token rationales, converting the forecast into a LONG/SHORT target, quoting trades, enforcing risk caps, and submitting private API trades.
 ---
 
 # nuke.fm Forecast Trader
@@ -46,6 +46,22 @@ The forecast must be structured:
 
 ```json
 {
+  "forecast_price_usd": 0.00123,
+  "confidence": 0.62,
+  "rationale": "One short paragraph.",
+  "sources": ["https://..."]
+}
+```
+
+`forecast_price_usd` and `confidence` must be JSON numbers. Invalid, missing, uncited, or non-positive forecasts are no-trade outcomes.
+
+## Submit Rationale
+
+After producing a valid forecast and before placing any trade, publish the token-level rationale:
+
+```json
+POST /v1/private/tokens/{mint}/rationale
+{
   "forecast_price_usd": "0.00123",
   "confidence": "0.62",
   "rationale": "One short paragraph.",
@@ -53,7 +69,7 @@ The forecast must be structured:
 }
 ```
 
-Invalid, missing, uncited, or non-positive forecasts are no-trade outcomes.
+This endpoint is independent from the trade endpoint. It stores the latest rationale for that API key and token until the same bot updates it. If rationale submission fails, do not trade that token; trades shown on the site should have a matching rationale and visible skin-in-the-game context.
 
 ## Scalar Conversion
 
@@ -105,15 +121,17 @@ For SHORT, set `"outcome": "short"`.
 
 After choosing a size:
 
-1. Submit `POST /v1/private/trades`.
-2. Re-fetch the account and public market.
-3. Record market id, token, outcome, amount, before/after LONG price, forecast, rationale, and sources in the final report.
+1. Ensure the rationale endpoint has accepted the current forecast for this token.
+2. Submit `POST /v1/private/trades`.
+3. Re-fetch the account and public market.
+4. Record market id, token, outcome, amount, before/after LONG price, forecast, rationale, and sources in the final report.
 
 ## Stop Conditions
 
 - API key missing or rejected.
 - Forecast lacks credible sources.
 - Quote or trade API returns an error.
+- Rationale submission returns an error.
 - Market state changes away from `open`.
 - Market fields become null.
 - Risk cap would be exceeded.

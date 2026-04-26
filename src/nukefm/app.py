@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .accounts import AccountStore, AuthenticatedUser
 from .auth import AuthService
@@ -57,6 +57,13 @@ class TradeRequest(BaseModel):
     side: str
     amount_usdc: str | None = None
     share_amount: str | None = None
+
+
+class RationaleRequest(BaseModel):
+    rationale: str
+    forecast_price_usd: str | None = None
+    confidence: str | None = None
+    sources: list[str] = Field(default_factory=list)
 
 
 def _trade_atomic_amount(body: TradeRequest) -> int:
@@ -303,6 +310,25 @@ def create_app(
         except (LookupError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @app.post("/v1/private/tokens/{mint}/rationale")
+    def submit_token_rationale(
+        mint: str,
+        body: RationaleRequest,
+        user: Annotated[AuthenticatedUser, Depends(_require_authenticated_user)],
+    ) -> dict:
+        try:
+            return market_store.upsert_token_rationale(
+                user_id=user.user_id,
+                submitter_wallet_address=user.wallet_address,
+                token_mint=mint,
+                rationale=body.rationale,
+                forecast_price_usd=body.forecast_price_usd,
+                confidence=body.confidence,
+                sources=body.sources,
+            )
+        except (LookupError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @app.post("/v1/private/withdrawals")
     def create_withdrawal(
         body: WithdrawalCreateRequest,
@@ -357,6 +383,17 @@ def create_app(
             request=request,
             name="about.html",
             context={},
+        )
+
+    @app.get("/trade", response_class=HTMLResponse)
+    def trade_page(request: Request):
+        return TEMPLATES.TemplateResponse(
+            request=request,
+            name="trade.html",
+            context={
+                "trader_bot_repo_url": "https://github.com/nukefm/nukefm-trader-bot",
+                "claude_skill_repo_url": "https://github.com/nukefm/nukefm-forecast-trader-skill",
+            },
         )
 
     @app.get("/tokens/{mint}", response_class=HTMLResponse)

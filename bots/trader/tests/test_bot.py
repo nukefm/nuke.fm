@@ -25,6 +25,7 @@ class FakeMarketApi:
         self._current_long_price = current_long_price
         self.executed_trades: list[dict] = []
         self.quote_calls: list[dict] = []
+        self.rationales: list[dict] = []
 
     def list_tokens(self) -> list[dict]:
         return [self._token]
@@ -47,6 +48,11 @@ class FakeMarketApi:
         trade = {"market_id": market_id, "outcome": outcome, "amount_usdc": amount_usdc}
         self.executed_trades.append(trade)
         return trade
+
+    def submit_rationale(self, *, mint: str, forecast: Forecast) -> dict:
+        rationale = {"mint": mint, "forecast": forecast}
+        self.rationales.append(rationale)
+        return rationale
 
 
 class FakeForecaster:
@@ -144,6 +150,7 @@ def test_bot_trades_long_toward_forecast(tmp_path: Path) -> None:
 
     assert decisions[0].outcome == "long"
     assert api.executed_trades[0]["outcome"] == "long"
+    assert api.rationales[0]["mint"] == "Mint333"
     assert Decimal("0") < api.executed_trades[0]["amount_usdc"] <= Decimal("1")
 
 
@@ -175,6 +182,7 @@ def test_bot_skips_when_market_is_not_tradeable(tmp_path: Path) -> None:
     assert bot.run_once() == []
     assert forecaster.calls == 0
     assert api.executed_trades == []
+    assert api.rationales == []
 
 
 def test_bot_skips_when_risk_cap_is_spent(tmp_path: Path) -> None:

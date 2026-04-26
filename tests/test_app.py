@@ -344,6 +344,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert 'rel="icon" type="image/svg+xml" href="http://testserver/static/favicon.svg?v=20260426"' in page_response.text
     assert 'rel="stylesheet" href="http://testserver/static/app.css?v=' in page_response.text
     assert "Trading stays in the API." not in page_response.text
+    assert "Read-only" not in page_response.text
+    assert 'href="/trade">Trade</a>' in page_response.text
     assert 'option value="market_liquidity" selected' in page_response.text
     assert 'option value="desc" selected' in page_response.text
     assert 'class="sort-heading' not in page_response.text
@@ -408,6 +410,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert detail_api_market["predicted_nuke_percent"] == "265.85%"
     assert detail_api_market["question"] == "What will GAMMA trade at by 2026-07-14?"
     assert detail_api_response.json()["hidden_active_markets"] == []
+    assert detail_api_response.json()["rationales"] == []
     assert detail_api_response.json()["current_market_chart"] == {
         "market_id": gamma_market_id,
         "interval_minutes": 5,
@@ -468,6 +471,12 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert about_response.status_code == 200
     assert "Prediction-market signals for Bags tokens" in about_response.text
     assert "Read-only web, API trading" in about_response.text
+
+    trade_response = client.get("/trade")
+    assert trade_response.status_code == 200
+    assert "Run a nuke.fm trading agent" in trade_response.text
+    assert "https://github.com/nukefm/nukefm-trader-bot" in trade_response.text
+    assert "https://github.com/nukefm/nukefm-forecast-trader-skill" in trade_response.text
 
 
 def test_board_can_show_uninitialized_markets_after_reset(tmp_path: Path) -> None:

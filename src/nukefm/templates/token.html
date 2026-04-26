@@ -100,6 +100,33 @@
   {% endif %}
 </section>
 
+{% if token.rationales %}
+<section class="detail-card rationale-card">
+  <div class="detail-section-heading">
+    <div>
+      <p class="eyebrow">Bot notes</p>
+      <h2>Rationales</h2>
+    </div>
+  </div>
+  <ul class="rationale-list">
+    {% for rationale in token.rationales %}
+    <li>
+      <div class="rationale-topline">
+        <span class="wallet-label">{{ rationale.submitter_wallet_address }}</span>
+        <strong>{{ usd_display(rationale.position_value_usdc) }} held</strong>
+      </div>
+      <p>{{ rationale.rationale }}</p>
+      <div class="rationale-footnote">
+        {% if rationale.forecast_price_usd %}<span>Forecast {{ usd_display(rationale.forecast_price_usd) }}</span>{% endif %}
+        {% if rationale.confidence %}<span>Confidence {{ rationale.confidence }}</span>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+{% endif %}
+
 <article class="detail-card">
   <div class="detail-section-heading">
     <div>

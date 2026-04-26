@@ -591,6 +591,108 @@ h2 {
   line-height: 1.50;
 }
 
+/* ── Bot Rationales ── */
+.rationale-card {
+  display: grid;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.rationale-list {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rationale-list li {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--oat-light);
+}
+
+.rationale-list li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.rationale-list li:last-child {
+  padding-bottom: 0;
+}
+
+.rationale-topline,
+.rationale-footnote {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.rationale-topline strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--matcha-600);
+}
+
+.wallet-label {
+  max-width: min(32rem, 100%);
+  overflow: hidden;
+  color: var(--warm-charcoal);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rationale-list p {
+  margin: 0;
+  max-width: 74ch;
+  color: var(--clay-black);
+}
+
+.rationale-footnote {
+  justify-content: flex-start;
+  color: var(--warm-silver);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+/* ── Trade Page ── */
+.trade-page-card {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.trade-link-list {
+  display: grid;
+  border-top: 1px solid var(--oat-light);
+}
+
+.trade-link-row {
+  display: grid;
+  gap: 0.25rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--oat-light);
+}
+
+.trade-link-row span {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.trade-link-row small {
+  color: var(--warm-silver);
+  font-size: 0.95rem;
+}
+
+.trade-link-row:hover span {
+  color: var(--matcha-600);
+}
+
 /* ── Metric Grid ── */
 .metric-grid {
   display: grid;

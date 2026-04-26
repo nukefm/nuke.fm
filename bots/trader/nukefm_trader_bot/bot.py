@@ -82,6 +82,9 @@ class MarketApi(Protocol):
     def execute_trade(self, *, market_id: int, outcome: str, amount_usdc: Decimal) -> dict:
         ...
 
+    def submit_rationale(self, *, mint: str, forecast: Forecast) -> dict:
+        ...
+
 
 class Forecaster(Protocol):
     def forecast(self, token: dict) -> Forecast:
@@ -123,6 +126,19 @@ class NukefmApiClient:
                 "outcome": outcome,
                 "side": "buy",
                 "amount_usdc": format_usdc(amount_usdc),
+            },
+        )
+
+    def submit_rationale(self, *, mint: str, forecast: Forecast) -> dict:
+        return self._request(
+            "POST",
+            f"/v1/private/tokens/{mint}/rationale",
+            private=True,
+            json_body={
+                "forecast_price_usd": str(forecast.forecast_price_usd),
+                "confidence": str(forecast.confidence),
+                "rationale": forecast.rationale,
+                "sources": list(forecast.sources),
             },
         )
 
@@ -382,10 +398,16 @@ class TraderBot:
 
         try:
             current_long_price = Decimal(str(market["long_price_usd"]))
-            target_long_price = self._target_long_price(self._forecast(token, now), market)
+            forecast = self._forecast(token, now)
         except Exception as error:
             return TradeDecision(**base, outcome=None, amount_usdc=ZERO, reason=f"No usable forecast: {error}")
 
+        try:
+            self._market_api.submit_rationale(mint=token["mint"], forecast=forecast)
+        except Exception as error:
+            return TradeDecision(**base, outcome=None, amount_usdc=ZERO, reason=f"Rationale submission failed: {error}")
+
+        target_long_price = self._target_long_price(forecast, market)
         edge = target_long_price - current_long_price
         if abs(edge) < self._config.min_forecast_edge:
             return TradeDecision(

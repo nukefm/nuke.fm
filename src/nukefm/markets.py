@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
+import json
 from pathlib import Path
 import sqlite3
 
@@ -185,6 +186,19 @@ class MarketStore:
                     underlying_price_usd TEXT NOT NULL,
                     implied_price_usd TEXT NOT NULL,
                     PRIMARY KEY(market_id, captured_at)
+                );
+
+                CREATE TABLE IF NOT EXISTS token_rationales (
+                    token_mint TEXT NOT NULL REFERENCES tokens(mint) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL,
+                    submitter_wallet_address TEXT NOT NULL,
+                    forecast_price_usd TEXT,
+                    confidence TEXT,
+                    rationale TEXT NOT NULL,
+                    sources_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(token_mint, user_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS token_metrics_snapshots (
@@ -500,6 +514,7 @@ class MarketStore:
                     )
                     for row in past_market_rows
                 ],
+                "rationales": self._token_rationales(connection, token_row["mint"]),
                 "current_market_chart": self._serialize_current_market_chart(
                     connection,
                     current_market,
@@ -610,6 +625,81 @@ class MarketStore:
             quote["token_mint"] = market_row["token_mint"]
             quote["symbol"] = market_row["symbol"]
             return self._public_quote(quote)
+
+    def upsert_token_rationale(
+        self,
+        *,
+        user_id: int,
+        submitter_wallet_address: str,
+        token_mint: str,
+        rationale: str,
+        forecast_price_usd: str | None = None,
+        confidence: str | None = None,
+        sources: list[str] | None = None,
+    ) -> dict:
+        normalized_rationale = rationale.strip()
+        if not normalized_rationale:
+            raise ValueError("Rationale must not be empty.")
+
+        forecast_price_text = None
+        if forecast_price_usd is not None:
+            forecast_price = parse_decimal(forecast_price_usd)
+            if forecast_price <= Decimal("0"):
+                raise ValueError("forecast_price_usd must be positive.")
+            forecast_price_text = format_decimal(forecast_price)
+
+        confidence_text = None
+        if confidence is not None:
+            confidence_value = parse_decimal(confidence)
+            if confidence_value < Decimal("0") or confidence_value > Decimal("1"):
+                raise ValueError("confidence must be inside [0, 1].")
+            confidence_text = format_decimal(confidence_value)
+
+        timestamp = utc_now()
+        sources_json = json.dumps([str(source) for source in (sources or [])])
+        with connect_database(self._database_path) as connection:
+            token = connection.execute("SELECT mint FROM tokens WHERE mint = ?", [token_mint]).fetchone()
+            if token is None:
+                raise LookupError(f"Unknown token mint: {token_mint}")
+
+            row = connection.execute(
+                """
+                INSERT INTO token_rationales (
+                    token_mint,
+                    user_id,
+                    submitter_wallet_address,
+                    forecast_price_usd,
+                    confidence,
+                    rationale,
+                    sources_json,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(token_mint, user_id) DO UPDATE SET
+                    submitter_wallet_address = excluded.submitter_wallet_address,
+                    forecast_price_usd = excluded.forecast_price_usd,
+                    confidence = excluded.confidence,
+                    rationale = excluded.rationale,
+                    sources_json = excluded.sources_json,
+                    updated_at = excluded.updated_at
+                RETURNING *
+                """,
+                [
+                    token_mint,
+                    user_id,
+                    submitter_wallet_address,
+                    forecast_price_text,
+                    confidence_text,
+                    normalized_rationale,
+                    sources_json,
+                    timestamp,
+                    timestamp,
+                ],
+            ).fetchone()
+            serialized = self._serialize_token_rationale(connection, row)
+            serialized.pop("_position_value_atomic")
+            return serialized
 
     def list_positions(self, user_id: int) -> list[dict]:
         with connect_database(self._database_path) as connection:
@@ -1726,6 +1816,66 @@ class MarketStore:
                 for row in self._market_chart_rows(connection, market_ids)
             ],
         }
+
+    def _token_rationales(self, connection: sqlite3.Connection, token_mint: str) -> list[dict]:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM token_rationales
+            WHERE token_mint = ?
+            """,
+            [token_mint],
+        ).fetchall()
+        rationales = [self._serialize_token_rationale(connection, row) for row in rows]
+        rationales.sort(key=lambda item: (-item["_position_value_atomic"], item["submitter_wallet_address"]))
+        for rationale in rationales:
+            rationale.pop("_position_value_atomic")
+        return rationales
+
+    def _serialize_token_rationale(self, connection: sqlite3.Connection, row: sqlite3.Row) -> dict:
+        position_value_atomic = self._token_position_value_atomic(
+            connection,
+            user_id=row["user_id"],
+            token_mint=row["token_mint"],
+        )
+        return {
+            "token_mint": row["token_mint"],
+            "submitter_wallet_address": row["submitter_wallet_address"],
+            "rationale": row["rationale"],
+            "forecast_price_usd": row["forecast_price_usd"],
+            "confidence": row["confidence"],
+            "sources": json.loads(row["sources_json"]),
+            "position_value_usdc": format_usdc_amount(position_value_atomic),
+            "updated_at": row["updated_at"],
+            "_position_value_atomic": position_value_atomic,
+        }
+
+    def _token_position_value_atomic(self, connection: sqlite3.Connection, *, user_id: int, token_mint: str) -> int:
+        rows = connection.execute(
+            """
+            SELECT
+                market_positions.market_id,
+                market_positions.long_shares_atomic,
+                market_positions.short_shares_atomic
+            FROM market_positions
+            JOIN markets ON markets.id = market_positions.market_id
+            WHERE market_positions.user_id = ?
+              AND markets.token_mint = ?
+              AND (
+                market_positions.long_shares_atomic > 0
+                OR market_positions.short_shares_atomic > 0
+              )
+            """,
+            [user_id, token_mint],
+        ).fetchall()
+        total_value_atomic = 0
+        for row in rows:
+            pool = self._load_pool(connection, row["market_id"], required=False)
+            if pool is None:
+                continue
+            total_value_atomic += int(Decimal(row["long_shares_atomic"]) * long_price(pool))
+            total_value_atomic += int(Decimal(row["short_shares_atomic"]) * short_price(pool))
+        return total_value_atomic
 
     @staticmethod
     def _sort_token_cards(token_cards: list[dict], *, sort_by: str, sort_direction: str) -> None:

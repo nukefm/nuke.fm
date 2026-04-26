@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="detail-card trade-page-card">
+  <div class="detail-section-heading">
+    <div>
+      <p class="eyebrow">Trade</p>
+      <h1 class="headline-question">Run a nuke.fm trading agent</h1>
+    </div>
+    <p class="section-copy">Use the Claude skill for agent-led trading, or run the Python bot when you want a scheduled trader with local state and risk caps.</p>
+  </div>
+
+  <div class="trade-link-list">
+    <a class="trade-link-row" href="{{ claude_skill_repo_url }}" target="_blank" rel="noopener">
+      <span>Claude skill</span>
+      <small>Instructions for agents that trade through the nuke.fm API.</small>
+    </a>
+    <a class="trade-link-row" href="{{ trader_bot_repo_url }}" target="_blank" rel="noopener">
+      <span>Python bot</span>
+      <small>Runnable LLM trader with forecast cache, sizing, and risk checks.</small>
+    </a>
+  </div>
+</section>
+{% endblock %}

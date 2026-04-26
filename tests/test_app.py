@@ -426,7 +426,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
 
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
-    assert "What will GAMMA trade at by 2026-07-14?" in detail_response.text
+    assert "What will GAMMA trade at by 14 Jul?" in detail_response.text
+    assert "What will GAMMA trade at by 2026-07-14?" not in detail_response.text
     assert "By 14 Jul" in detail_response.text
     assert "2026-07-14T12:00:00+00:00" not in detail_response.text
     assert "Live PM signal based on market price" in detail_response.text

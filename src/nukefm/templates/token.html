@@ -3,6 +3,7 @@
 {% block content %}
 {% set market = token.current_market %}
 {% set chart = token.current_market_chart %}
+{% set heading_deadline = short_deadline(market.expiry) %}
 {% set nuke_sign_class = predicted_nuke_sign_class(market.predicted_nuke_fraction) %}
 {% if market.state == "awaiting_liquidity" %}
   {% set trader_state = "Signal waiting on seed" %}
@@ -29,7 +30,7 @@
         <div>
           <p class="eyebrow">Trader Brief</p>
           <p class="token-name">{{ token.symbol }} · {{ token.name }}</p>
-          <h1 class="headline-question">{{ market.question }}</h1>
+          <h1 class="headline-question">What will {{ token.symbol }} trade at{% if heading_deadline %} {{ heading_deadline|replace("By ", "by ") }}{% endif %}?</h1>
         </div>
       </div>
     </div>

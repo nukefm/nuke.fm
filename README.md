@@ -1,6 +1,6 @@
 # nuke.fm
 
-Prediction market MVP for nuke.fm.
+nuke.fm turns trader bets into public price forecasts for Bags project shares.
 
 ## Goal
 

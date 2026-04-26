@@ -121,6 +121,25 @@ img { max-width: 100%; display: block; }
   color: var(--clay-black);
 }
 
+.site-nav {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.site-nav a {
+  border-radius: var(--r-pill);
+  padding: 0.35rem 0.7rem;
+  color: var(--warm-charcoal);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.site-nav a:hover {
+  background: var(--white);
+  color: var(--clay-black);
+}
+
 .tagline {
   display: none;
 }
@@ -378,7 +397,12 @@ h2 {
   background: var(--warm-cream);
 }
 
-.token-link, .nuke-cell { display: grid; gap: 0.2rem; }
+.token-cell,
+.token-link,
+.nuke-cell {
+  display: grid;
+  gap: 0.2rem;
+}
 
 .token-link-with-avatar {
   grid-template-columns: 3rem minmax(0, 1fr);
@@ -395,10 +419,24 @@ h2 {
   font-feature-settings: var(--ot-display);
 }
 
-.token-link small, .nuke-cell small {
+.token-link small, .nuke-cell small, .bags-token-link {
   font-size: 0.8rem;
   font-weight: 400;
   color: var(--warm-silver);
+}
+
+.bags-token-link {
+  width: fit-content;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.bags-token-link:hover {
+  color: var(--clay-black);
+}
+
+.deadline-note {
+  color: var(--warm-charcoal) !important;
 }
 
 .nuke-sign-positive { color: var(--pomegranate-400); }
@@ -505,7 +543,7 @@ h2 {
 /* ── Decision Strip ── */
 .decision-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
@@ -715,6 +753,26 @@ dt { margin-bottom: 0.4rem; }
 
 .detail-code-strip { display: grid; gap: 0.3rem; }
 
+.detail-bags-link {
+  margin-top: 0.25rem;
+}
+
+.compact-address-row {
+  margin-top: 1rem;
+}
+
+.about-card {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.about-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
 .detail-code-strip span {
   font-size: 12px;
   font-weight: 600;
@@ -832,6 +890,7 @@ select:focus-visible {
   }
 
   .detail-layout,
+  .about-grid,
   .board-controls {
     grid-template-columns: 1fr;
     display: grid;

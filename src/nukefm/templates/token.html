@@ -6,13 +6,13 @@
 {% set nuke_sign_class = predicted_nuke_sign_class(market.predicted_nuke_fraction) %}
 {% if market.state == "awaiting_liquidity" %}
   {% set trader_state = "Signal waiting on seed" %}
-  {% set trader_state_note = "The next visible series is staged with a scalar LONG/SHORT price range. Trading opens after the first funded liquidity deposit." %}
+  {% set trader_state_note = "This Bags market is staged with a scalar LONG/SHORT price range. Trading opens after the first funded liquidity deposit." %}
 {% elif market.state == "open" %}
   {% set trader_state = "Signal live" %}
-  {% set trader_state_note = "The PM is live. Compare the market-implied terminal price with the latest 24h-median token price before acting on the token." %}
+  {% set trader_state_note = "The PM is live. Compare the market-implied terminal price with the latest 24h-median Bags token price before acting." %}
 {% elif market.state == "halted" %}
   {% set trader_state = "Signal paused" %}
-  {% set trader_state_note = "Trading is halted. Use the last captured 24h-median token price, implied price, and activity trail as context, not as a fresh live read." %}
+  {% set trader_state_note = "Trading is halted. Use the last captured 24h-median Bags token price, implied price, and activity trail as context, not as a fresh live read." %}
 {% else %}
   {% set trader_state = "Series closed" %}
   {% set trader_state_note = "This series has resolved. Use it as historical context only." %}
@@ -51,6 +51,11 @@
       </p>
     </article>
     <article class="decision-card">
+      <p class="decision-label">Deadline</p>
+      <p class="decision-value">{{ short_deadline(market.expiry) or "Pending" }}</p>
+      <p class="decision-copy">Current series expiry.</p>
+    </article>
+    <article class="decision-card">
       <p class="decision-label">Prediction liquidity</p>
       <p class="decision-value">{{ usd_display(market.total_liquidity_usdc) or "Prediction liquidity pending" }}</p>
       <p class="decision-copy">Current pool depth.</p>
@@ -67,36 +72,10 @@
     </article>
   </section>
 
-  <section class="ops-banner">
-    <div>
-      <p class="panel-kicker">Activation Gate</p>
-      <p class="panel-caption">
-        {% if market.state == "awaiting_liquidity" %}
-        This deposit address is what turns the page from watchlist context into a live PM signal.
-        {% elif market.state == "open" %}
-        The market is already active. The address remains operational, but the main value here is the signal itself.
-        {% else %}
-        This address belongs to the current series lifecycle.
-        {% endif %}
-      </p>
-    </div>
-    <span class="status-chip {% if market.liquidity_deposit_address %}status-chip-ready{% else %}status-chip-pending{% endif %}">
-      {% if market.liquidity_deposit_address %}Deposit ready{% else %}Deposit pending{% endif %}
-    </span>
-  </section>
-
-  {% if market.liquidity_deposit_address %}
-  <div class="address-row">
-    <code class="address-block">{{ market.liquidity_deposit_address }}</code>
-    <button class="copy-button" type="button" data-copy="{{ market.liquidity_deposit_address }}">Copy</button>
-  </div>
-  {% else %}
-  <p class="availability-note">The liquidity deposit address has not been assigned yet.</p>
-  {% endif %}
-
   <div class="detail-code-strip">
-    <span>Mint</span>
+    <span>Bags mint</span>
     <code>{{ token.mint }}</code>
+    <a class="bags-token-link detail-bags-link" href="{{ token.bags_token_url }}" target="_blank" rel="noopener">Open on Bags</a>
   </div>
 </section>
 
@@ -104,9 +83,9 @@
   <div class="detail-section-heading">
     <div>
       <p class="eyebrow">Overlay</p>
-      <h2>Token price vs implied price</h2>
+      <h2>Token price vs PM implied price</h2>
     </div>
-    <p class="section-copy">Aligned 5 minute snapshots for the current series, with separate axes for price and market signal.</p>
+    <p class="section-copy">Aligned 5 minute snapshots for the current Bags series, with separate axes for token price and market signal.</p>
   </div>
   {% if chart.points %}
   <div class="chart-shell">
@@ -123,10 +102,10 @@
 <article class="detail-card">
   <div class="detail-section-heading">
     <div>
-      <p class="eyebrow">Series metadata</p>
-      <h2>Market context</h2>
+      <p class="eyebrow">Bags context</p>
+      <h2>Series details</h2>
     </div>
-    <p class="section-copy">Lifecycle details and launch context that stay useful even when the signal is paused.</p>
+    <p class="section-copy">Lifecycle details and Bags launch context that stay useful when the signal is paused.</p>
   </div>
   <dl class="metric-grid detail-metric-grid">
     <div>
@@ -142,7 +121,7 @@
       <dd>{{ usd_display(market.min_price_usd) }} to {{ usd_display(market.max_price_usd) }}</dd>
     </div>
     <div>
-      <dt>Market Start</dt>
+      <dt>Market start</dt>
       <dd>{{ market.market_start or "Starts after first liquidity deposit" }}</dd>
     </div>
     <div>
@@ -150,11 +129,11 @@
       <dd>{{ market.expiry or "Not started" }}</dd>
     </div>
     <div>
-      <dt>Liquidity Deposit</dt>
+      <dt>Liquidity deposit</dt>
       <dd>{{ market.liquidity_deposit_address or "Pending assignment" }}</dd>
     </div>
     <div>
-      <dt>Launch Feed</dt>
+      <dt>Bags launch</dt>
       <dd>{{ token.launched_at or "Unavailable" }}</dd>
     </div>
     <div>
@@ -162,34 +141,14 @@
       <dd>{{ token.creator or "Unavailable" }}</dd>
     </div>
   </dl>
-</article>
-
-<article class="detail-card">
-  <div class="detail-section-heading">
-    <div>
-      <p class="eyebrow">Ops</p>
-      <h2>Series mechanics</h2>
-    </div>
-    <p class="section-copy">Operational state that explains why the signal is or is not usable right now.</p>
+  {% if market.liquidity_deposit_address %}
+  <div class="address-row compact-address-row">
+    <code class="address-block">{{ market.liquidity_deposit_address }}</code>
+    <button class="copy-button" type="button" data-copy="{{ market.liquidity_deposit_address }}">Copy</button>
   </div>
-  <dl class="metric-grid detail-metric-grid">
-    <div>
-      <dt>State</dt>
-      <dd>{{ trader_state }}</dd>
-    </div>
-    <div>
-      <dt>Market Start</dt>
-      <dd>{{ market.market_start or "Starts after first liquidity deposit" }}</dd>
-    </div>
-    <div>
-      <dt>Liquidity Deposit</dt>
-      <dd>{{ market.liquidity_deposit_address or "Pending assignment" }}</dd>
-    </div>
-    <div>
-      <dt>Resolved At</dt>
-      <dd>{{ market.resolved_at or "Unresolved" }}</dd>
-    </div>
-  </dl>
+  {% else %}
+  <p class="availability-note">The liquidity deposit address has not been assigned yet.</p>
+  {% endif %}
 </article>
 
 <section class="detail-card">

@@ -41,6 +41,10 @@ TOKEN_CARD_SORT_FIELDS = {value for value, _ in TOKEN_CARD_SORT_OPTIONS}
 MARKET_CHART_INTERVAL_MINUTES = 5
 
 
+def bags_token_url(token_mint: str) -> str:
+    return f"https://bags.fm/{token_mint}"
+
+
 class MarketStore:
     def __init__(
         self,
@@ -474,6 +478,7 @@ class MarketStore:
                 "image_url": token_row["image_url"],
                 "launched_at": token_row["launched_at"],
                 "creator": token_row["creator"],
+                "bags_token_url": bags_token_url(token_row["mint"]),
                 "current_market": self._serialize_market(
                     connection,
                     current_market,
@@ -1606,6 +1611,7 @@ class MarketStore:
             "name": row["name"],
             "image_url": row["image_url"],
             "launched_at": row["launched_at"],
+            "bags_token_url": bags_token_url(row["mint"]),
             "current_market": self._serialize_market(
                 connection,
                 row,

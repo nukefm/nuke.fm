@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
 from .weighted_pool import parse_decimal
@@ -50,6 +51,14 @@ def format_percent_table_display(value: str | int | float | Decimal | None) -> s
         text = text[:-1]
 
     return f"{format(parse_decimal(text).quantize(TABLE_QUANTUM), ',.2f')}%"
+
+
+def format_short_deadline(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    deadline = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return f"By {deadline.day} {deadline.strftime('%b')}"
 
 
 def predicted_nuke_sign_class(value: str | int | float | Decimal | None) -> str | None:

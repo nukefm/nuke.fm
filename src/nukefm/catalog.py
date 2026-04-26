@@ -10,6 +10,10 @@ from .database import connect_database, utc_now
 ACTIVE_MARKET_STATES = {"awaiting_liquidity", "open", "halted"}
 
 
+def bags_token_url(token_mint: str) -> str:
+    return f"https://bags.fm/{token_mint}"
+
+
 def seed_market_question(symbol: str) -> str:
     return f"What will {symbol} trade at?"
 
@@ -117,6 +121,7 @@ class Catalog:
             "image_url": token_row["image_url"],
             "launched_at": token_row["launched_at"],
             "creator": token_row["creator"],
+            "bags_token_url": bags_token_url(token_row["mint"]),
             "current_market": None if current_market is None else self._serialize_market(current_market),
             "hidden_active_markets": [self._serialize_market(row) for row in hidden_active_markets],
             "past_markets": [self._serialize_market(row) for row in past_markets],

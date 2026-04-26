@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="detail-card about-card">
+  <p class="eyebrow">About</p>
+  <h1 class="headline-question">Prediction-market signals for Bags tokens</h1>
+  <p class="market-state-note">
+    nuke.fm tracks Bags token markets and turns their prediction-market pricing into a trader-facing signal.
+    The board starts from Bags token mints, keeps each token linked back to its Bags page, and shows whether
+    the current market signal is live, waiting on seed liquidity, or paused.
+  </p>
+</section>
+
+<section class="about-grid">
+  <article class="detail-card">
+    <div class="detail-section-heading">
+      <div>
+        <p class="eyebrow">Purpose</p>
+        <h2>What the board is for</h2>
+      </div>
+    </div>
+    <p class="section-copy">
+      Bags traders can scan live prediction liquidity, implied terminal price, predicted nuke percentage,
+      token volume, and market cap without leaving the token board. It is a quick read on where the PM
+      thinks a Bags mint may trade by expiry.
+    </p>
+  </article>
+
+  <article class="detail-card">
+    <div class="detail-section-heading">
+      <div>
+        <p class="eyebrow">Mechanics</p>
+        <h2>How markets work</h2>
+      </div>
+    </div>
+    <p class="section-copy">
+      Each Bags token gets a rolling scalar LONG/SHORT market. The pool price maps to an implied expiry
+      price inside a fixed range around the market’s starting price. Settlement uses stored 24h-median
+      token price snapshots rather than a single spot print.
+    </p>
+  </article>
+
+  <article class="detail-card">
+    <div class="detail-section-heading">
+      <div>
+        <p class="eyebrow">Access</p>
+        <h2>Read-only web, API trading</h2>
+      </div>
+    </div>
+    <p class="section-copy">
+      The website is read-only. Trading, balances, deposits, withdrawals, and position history live behind
+      the private API. Public pages focus on the Bags board, token context, market state, and chart history.
+    </p>
+  </article>
+</section>
+{% endblock %}

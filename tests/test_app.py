@@ -98,6 +98,7 @@ def token_fixture(*, mint: str, symbol: str, predicted_nuke_percent: str | None,
         "image_url": None,
         "launched_at": None,
         "creator": None,
+        "bags_token_url": f"https://bags.fm/{mint}",
         "current_market_chart": {"points": []},
         "hidden_active_markets": [],
         "past_markets": [],
@@ -329,6 +330,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert token_response.status_code == 200
     assert [token["symbol"] for token in token_response.json()["tokens"]] == ["OMEGA", "GAMMA", "ALPHA"]
     gamma_token = next(token for token in token_response.json()["tokens"] if token["symbol"] == "GAMMA")
+    assert gamma_token["bags_token_url"] == "https://bags.fm/Mint333"
     assert gamma_token["current_market"]["liquidity_deposit_address"] == "market-deposit-2"
     assert gamma_token["current_market"]["pm_volume_24h_usdc"] == "1"
     assert gamma_token["current_market"]["implied_price_usd"] == "0.00000000045"
@@ -351,6 +353,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "$0.00000000045" in page_response.text
     assert "-265.85%" in page_response.text
     assert "-265.85% from current price" in page_response.text
+    assert "By 14 Jul" in page_response.text
+    assert 'href="https://bags.fm/Mint333" target="_blank" rel="noopener">Bags token</a>' in page_response.text
     assert "Implied by predicted market cap" not in page_response.text
     assert "Predicted nuke %" in page_response.text
     assert "Prediction liquidity" in page_response.text
@@ -420,9 +424,16 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     detail_response = client.get("/tokens/Mint333")
     assert detail_response.status_code == 200
     assert "What will GAMMA trade at by 2026-07-14?" in detail_response.text
+    assert "By 14 Jul" in detail_response.text
     assert "Prediction 24h volume" in detail_response.text
     assert "Implied price" in detail_response.text
-    assert "Token price vs implied price" in detail_response.text
+    assert "Token price vs PM implied price" in detail_response.text
+    assert "Bags context" in detail_response.text
+    assert "Bags mint" in detail_response.text
+    assert 'href="https://bags.fm/Mint333" target="_blank" rel="noopener">Open on Bags</a>' in detail_response.text
+    assert "Activation Gate" not in detail_response.text
+    assert "Series mechanics" not in detail_response.text
+    assert detail_response.text.count("market-deposit-2") == 3
     assert "snapshot-market-charts" not in detail_response.text
     assert "token-overlay-chart" in detail_response.text
     assert "cdn.jsdelivr.net/npm/chart.js" in detail_response.text
@@ -440,6 +451,11 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     favicon_response = client.get("/static/favicon.svg")
     assert favicon_response.status_code == 200
     assert "<svg" in favicon_response.text
+
+    about_response = client.get("/about")
+    assert about_response.status_code == 200
+    assert "Prediction-market signals for Bags tokens" in about_response.text
+    assert "Read-only web, API trading" in about_response.text
 
 
 def test_board_can_show_uninitialized_markets_after_reset(tmp_path: Path) -> None:

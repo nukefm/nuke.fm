@@ -14,7 +14,13 @@ from .accounts import AccountStore, AuthenticatedUser
 from .auth import AuthService
 from .catalog import Catalog
 from .config import load_settings
-from .display import format_percent_table_display, format_usd_display, format_usd_table_display, predicted_nuke_sign_class
+from .display import (
+    format_percent_table_display,
+    format_short_deadline,
+    format_usd_display,
+    format_usd_table_display,
+    predicted_nuke_sign_class,
+)
 from .logging_utils import configure_logging
 from .markets import MarketStore, TOKEN_CARD_SORT_OPTIONS
 from .treasury import SolanaTreasury
@@ -25,6 +31,7 @@ TEMPLATES = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
 TEMPLATES.env.globals["usd_display"] = format_usd_display
 TEMPLATES.env.globals["usd_table_display"] = format_usd_table_display
 TEMPLATES.env.globals["percent_table_display"] = format_percent_table_display
+TEMPLATES.env.globals["short_deadline"] = format_short_deadline
 TEMPLATES.env.globals["predicted_nuke_sign_class"] = predicted_nuke_sign_class
 TEMPLATES.env.globals["static_asset_version"] = str(int((PACKAGE_DIR / "static" / "app.css").stat().st_mtime))
 
@@ -342,6 +349,14 @@ def create_app(
                 "refresh_seconds": settings.frontend_refresh_seconds,
                 **_token_card_sort_context(sort_by, sort_direction),
             },
+        )
+
+    @app.get("/about", response_class=HTMLResponse)
+    def about_page(request: Request):
+        return TEMPLATES.TemplateResponse(
+            request=request,
+            name="about.html",
+            context={},
         )
 
     @app.get("/tokens/{mint}", response_class=HTMLResponse)

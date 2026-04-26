@@ -223,6 +223,7 @@ export HOME="\${deploy_home}"
 export PATH="\${deploy_home}/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 git --work-tree="\${work_tree}" --git-dir="\${git_dir}" checkout -f main
+rm -f "\${work_tree}/.git"
 checkout_submodule() {
     local path="\$1"
     local url="\$2"

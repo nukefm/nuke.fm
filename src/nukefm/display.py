@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from .weighted_pool import parse_decimal
 
@@ -29,7 +29,12 @@ def format_usd_display(value: str | int | float | Decimal | None) -> str | None:
     return f"${text}"
 
 
-def format_usd_table_display(value: str | int | float | Decimal | None, *, preserve_tiny_price: bool = False) -> str | None:
+def format_usd_table_display(
+    value: str | int | float | Decimal | None,
+    *,
+    decimal_places: int = 2,
+    preserve_tiny_price: bool = False,
+) -> str | None:
     if value is None:
         return None
 
@@ -37,7 +42,8 @@ def format_usd_table_display(value: str | int | float | Decimal | None, *, prese
     if preserve_tiny_price and decimal_value != 0 and abs(decimal_value) < TABLE_QUANTUM:
         return format_usd_display(decimal_value)
 
-    return f"${format(decimal_value.quantize(TABLE_QUANTUM), ',.2f')}"
+    quantum = Decimal(1).scaleb(-decimal_places)
+    return f"${format(decimal_value.quantize(quantum, rounding=ROUND_HALF_UP), f',.{decimal_places}f')}"
 
 
 def format_percent_table_display(value: str | int | float | Decimal | None) -> str | None:

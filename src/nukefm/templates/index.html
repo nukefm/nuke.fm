@@ -86,8 +86,8 @@
         <td>{{ usd_table_display(market.implied_price_usd, preserve_tiny_price=true) or "Pending" }}</td>
         <td>{{ usd_table_display(market.pm_volume_24h_usdc) }}</td>
         <td>{{ usd_table_display(market.total_liquidity_usdc) or "Pending" }}</td>
-        <td>{{ usd_table_display(market.underlying_volume_24h_usd) or "Pending" }}</td>
-        <td>{{ usd_table_display(market.underlying_market_cap_usd) or "Pending" }}</td>
+        <td>{{ usd_table_display(market.underlying_volume_24h_usd, decimal_places=0) or "Pending" }}</td>
+        <td>{{ usd_table_display(market.underlying_market_cap_usd, decimal_places=0) or "Pending" }}</td>
       </tr>
       {% endfor %}
     </tbody>

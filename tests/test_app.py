@@ -350,7 +350,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Clear sort" not in page_response.text
     assert "$20.00" in page_response.text
     assert "$1.00" in page_response.text
-    assert "$1,234.50" in page_response.text
+    assert "$1,235" in page_response.text
+    assert "$1,234.50" not in page_response.text
     assert "$0.00000000045" in page_response.text
     assert "265.85%" in page_response.text
     assert "265.85% from current price" not in page_response.text

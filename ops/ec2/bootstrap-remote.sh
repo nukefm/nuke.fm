@@ -223,8 +223,17 @@ export HOME="\${deploy_home}"
 export PATH="\${deploy_home}/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 git --work-tree="\${work_tree}" --git-dir="\${git_dir}" checkout -f main
-git --work-tree="\${work_tree}" --git-dir="\${git_dir}" submodule sync --recursive
-git --work-tree="\${work_tree}" --git-dir="\${git_dir}" submodule update --init --recursive
+checkout_submodule() {
+    local path="\$1"
+    local url="\$2"
+    local commit
+    commit="\$(git --git-dir="\${git_dir}" ls-tree main "\${path}" | awk '{print \$3}')"
+    rm -rf "\${work_tree}/\${path}"
+    git clone --quiet "\${url}" "\${work_tree}/\${path}"
+    git -C "\${work_tree}/\${path}" checkout --quiet "\${commit}"
+}
+checkout_submodule "bots/trader" "https://github.com/nukefm/nukefm-trader-bot.git"
+checkout_submodule ".claude/skills/nukefm-forecast-trader" "https://github.com/nukefm/nukefm-forecast-trader-skill.git"
 cd "\${work_tree}"
 uv sync --frozen
 

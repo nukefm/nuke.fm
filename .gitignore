@@ -92,4 +92,5 @@ profile_default/
 # output and storage
 output/
 data/
+bots/noise-trader/
 **/node_modules/

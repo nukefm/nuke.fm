@@ -103,8 +103,9 @@
 
 ## LLM Trading Bot
 
-- The first trader bot is a repo-local nested Python subproject under `bots/trader`, not a git submodule and not another `nukefm` CLI command.
+- The LLM trader bot now lives as the `bots/trader` submodule pointing at `nukefm/nukefm-trader-bot`; the standalone Claude skill lives as `.claude/skills/nukefm-forecast-trader` pointing at `nukefm/nukefm-forecast-trader-skill`.
 - Its fair-price source is an OpenRouter call to `moonshotai/kimi-k2.6` with the `openrouter:web_search` server tool enabled. The bot asks for a cited USD price forecast at market expiry, maps that forecast into the scalar LONG target, then buys LONG or SHORT through the private API inside risk caps.
 - Missing or invalid forecasts intentionally produce no-trade records. Do not replace them with spot/reference-price fallbacks because that would change the bot's strategy semantics.
 - The first live bot run showed Kimi/OpenRouter sometimes returned null, prose/non-JSON, or non-decimal forecast content despite prompt-only JSON instructions. Use OpenRouter structured outputs with numeric forecast fields for forecast calls; do not loosen parsing or synthesize a forecast when the schema is not satisfied.
 - Bot rationales are token-level state keyed by API account and Bags mint, independent of the trade endpoint. Bots should submit or update the rationale before trading so the public token page can show the latest thesis next to that bot's current marked value across all PM positions for the token.
+- `bots/noise-trader/` is deliberately gitignored and local-only. It exists for controlled tiny random trades to exercise volume display, not as product code.

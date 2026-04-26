@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
+import re
 
 from .weighted_pool import parse_decimal
 
@@ -77,3 +78,14 @@ def predicted_nuke_sign_class(value: str | int | float | Decimal | None) -> str 
     if decimal_value < 0:
         return "nuke-sign-negative"
     return "nuke-sign-neutral"
+
+
+def rationale_bullets(value: str | None) -> list[str]:
+    if value is None:
+        return []
+
+    text = " ".join(value.split())
+    if not text:
+        return []
+
+    return [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", text) if sentence.strip()]

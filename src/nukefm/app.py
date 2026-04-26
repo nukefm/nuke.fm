@@ -20,6 +20,7 @@ from .display import (
     format_usd_display,
     format_usd_table_display,
     predicted_nuke_sign_class,
+    rationale_bullets,
 )
 from .logging_utils import configure_logging
 from .markets import MarketStore, TOKEN_CARD_SORT_OPTIONS
@@ -33,6 +34,7 @@ TEMPLATES.env.globals["usd_table_display"] = format_usd_table_display
 TEMPLATES.env.globals["percent_table_display"] = format_percent_table_display
 TEMPLATES.env.globals["short_deadline"] = format_short_deadline
 TEMPLATES.env.globals["predicted_nuke_sign_class"] = predicted_nuke_sign_class
+TEMPLATES.env.globals["rationale_bullets"] = rationale_bullets
 TEMPLATES.env.globals["static_asset_version"] = str(int((PACKAGE_DIR / "static" / "app.css").stat().st_mtime))
 
 

@@ -457,6 +457,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "LONG Price" not in detail_response.text
     assert "SHORT Price" not in detail_response.text
     assert "LONG and SHORT skew" not in detail_response.text
+    assert "Series rollups" not in detail_response.text
+    assert "Rolled live series" not in detail_response.text
 
     no_history_detail_response = client.get("/tokens/Mint111")
     assert no_history_detail_response.status_code == 200

@@ -80,6 +80,37 @@
   </div>
 </section>
 
+{% if token.rationales %}
+<section class="detail-card rationale-card">
+  <div class="detail-section-heading">
+    <div>
+      <p class="eyebrow">Bot notes</p>
+      <h2>Rationales</h2>
+    </div>
+  </div>
+  <ul class="rationale-list">
+    {% for rationale in token.rationales %}
+    <li>
+      <div class="rationale-topline">
+        <span class="wallet-label">{{ rationale.submitter_wallet_address }}</span>
+        <strong>{{ usd_display(rationale.position_value_usdc) }} held</strong>
+      </div>
+      <ul class="rationale-points">
+        {% for point in rationale_bullets(rationale.rationale) %}
+        <li>{{ point }}</li>
+        {% endfor %}
+      </ul>
+      <div class="rationale-footnote">
+        {% if rationale.forecast_price_usd %}<span>Forecast {{ usd_display(rationale.forecast_price_usd) }}</span>{% endif %}
+        {% if rationale.confidence %}<span>Confidence {{ rationale.confidence }}</span>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+{% endif %}
+
 <section class="detail-card chart-card">
   <div class="detail-section-heading">
     <div>
@@ -99,33 +130,6 @@
   <p class="availability-note">No chart history yet. The 5 minute snapshot job will populate this overlay shortly after the market is live.</p>
   {% endif %}
 </section>
-
-{% if token.rationales %}
-<section class="detail-card rationale-card">
-  <div class="detail-section-heading">
-    <div>
-      <p class="eyebrow">Bot notes</p>
-      <h2>Rationales</h2>
-    </div>
-  </div>
-  <ul class="rationale-list">
-    {% for rationale in token.rationales %}
-    <li>
-      <div class="rationale-topline">
-        <span class="wallet-label">{{ rationale.submitter_wallet_address }}</span>
-        <strong>{{ usd_display(rationale.position_value_usdc) }} held</strong>
-      </div>
-      <p>{{ rationale.rationale }}</p>
-      <div class="rationale-footnote">
-        {% if rationale.forecast_price_usd %}<span>Forecast {{ usd_display(rationale.forecast_price_usd) }}</span>{% endif %}
-        {% if rationale.confidence %}<span>Confidence {{ rationale.confidence }}</span>{% endif %}
-      </div>
-    </li>
-    {% endfor %}
-  </ul>
-</section>
-
-{% endif %}
 
 <article class="detail-card">
   <div class="detail-section-heading">
@@ -178,30 +182,6 @@
   <p class="availability-note">The liquidity deposit address has not been assigned yet.</p>
   {% endif %}
 </article>
-
-<section class="detail-card">
-  <div class="detail-section-heading">
-    <div>
-      <p class="eyebrow">Series rollups</p>
-      <h2>Rolled live series</h2>
-    </div>
-    <p class="section-copy">Earlier active series remain tradable; their implied-price snapshots are folded into the chart above.</p>
-  </div>
-  {% if token.hidden_active_markets %}
-  <ul class="activity-list activity-list-tight">
-    {% for market in token.hidden_active_markets %}
-    <li>
-      <div>
-        <p>Series {{ market.sequence_number }} is {{ market.state|replace("_", " ") }} at {{ market.question }}</p>
-        <time>{{ market.superseded_at or market.created_at }}</time>
-      </div>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="availability-note">No older active series are currently hidden from the frontend.</p>
-  {% endif %}
-</section>
 
 <section class="detail-card" style="margin-top: 1.25rem;">
   <div class="detail-section-heading">

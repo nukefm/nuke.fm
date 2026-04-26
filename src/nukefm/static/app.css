@@ -606,19 +606,19 @@ h2 {
   padding: 0;
 }
 
-.rationale-list li {
+.rationale-list > li {
   display: grid;
   gap: 0.55rem;
   padding: 1rem 0;
   border-top: 1px solid var(--oat-light);
 }
 
-.rationale-list li:first-child {
+.rationale-list > li:first-child {
   border-top: 0;
   padding-top: 0;
 }
 
-.rationale-list li:last-child {
+.rationale-list > li:last-child {
   padding-bottom: 0;
 }
 
@@ -647,10 +647,17 @@ h2 {
   white-space: nowrap;
 }
 
-.rationale-list p {
+.rationale-points {
+  display: grid;
+  gap: 0.35rem;
   margin: 0;
   max-width: 74ch;
+  padding-left: 1.05rem;
   color: var(--clay-black);
+}
+
+.rationale-points li {
+  padding-left: 0.15rem;
 }
 
 .rationale-footnote {

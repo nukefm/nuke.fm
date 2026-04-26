@@ -1,0 +1,6 @@
+[submodule "bots/trader"]
+	path = bots/trader
+	url = https://github.com/nukefm/nukefm-trader-bot.git
+[submodule ".claude/skills/nukefm-forecast-trader"]
+	path = .claude/skills/nukefm-forecast-trader
+	url = https://github.com/nukefm/nukefm-forecast-trader-skill.git

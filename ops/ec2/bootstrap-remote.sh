@@ -223,6 +223,8 @@ export HOME="\${deploy_home}"
 export PATH="\${deploy_home}/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 git --work-tree="\${work_tree}" --git-dir="\${git_dir}" checkout -f main
+git --work-tree="\${work_tree}" --git-dir="\${git_dir}" submodule sync --recursive
+git --work-tree="\${work_tree}" --git-dir="\${git_dir}" submodule update --init --recursive
 cd "\${work_tree}"
 uv sync --frozen
 

@@ -341,7 +341,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
 
     page_response = client.get("/?sort_by=market_liquidity&sort_direction=desc")
     assert page_response.status_code == 200
-    assert 'rel="icon" type="image/svg+xml" href="http://testserver/static/favicon.svg"' in page_response.text
+    assert 'rel="icon" type="image/svg+xml" href="http://testserver/static/favicon.svg?v=20260426"' in page_response.text
     assert 'rel="stylesheet" href="http://testserver/static/app.css?v=' in page_response.text
     assert "Trading stays in the API." not in page_response.text
     assert 'option value="market_liquidity" selected' in page_response.text

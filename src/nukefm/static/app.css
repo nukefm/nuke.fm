@@ -439,8 +439,8 @@ h2 {
   color: var(--warm-charcoal) !important;
 }
 
-.nuke-sign-positive { color: var(--pomegranate-400); }
-.nuke-sign-negative { color: var(--matcha-600); }
+.nuke-sign-positive { color: var(--matcha-600); }
+.nuke-sign-negative { color: var(--pomegranate-400); }
 .nuke-sign-neutral { color: var(--warm-charcoal); }
 
 /* ── State Pills ── */

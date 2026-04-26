@@ -71,7 +71,7 @@
           {% if market.state == "awaiting_liquidity" %}
           <span class="state-pill state-{{ market.state }}">Signal waiting on seed</span>
           {% elif market.state == "open" %}
-          <span class="state-pill state-{{ market.state }}">Signal live</span>
+          <span class="state-pill state-{{ market.state }}">Live prediction</span>
           {% elif market.state == "halted" %}
           <span class="state-pill state-{{ market.state }}">Signal paused</span>
           {% else %}

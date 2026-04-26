@@ -1649,7 +1649,7 @@ class MarketStore:
         predicted_nuke_fraction = (
             None
             if current_market_cap is None or predicted_market_cap is None or current_market_cap <= 0
-            else ONE - (predicted_market_cap / current_market_cap)
+            else (predicted_market_cap / current_market_cap) - ONE
         )
 
         return {

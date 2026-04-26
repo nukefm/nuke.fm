@@ -53,7 +53,7 @@
 
 - The web UI should read like a token-trader briefing, not a PM trading terminal. The primary user is a Bags trader who wants PM-derived risk context for the underlying token.
 - The first screen should answer three questions quickly: is the PM signal live, what level matters, and how much supporting token context exists. Lower sections can hold mechanics and history.
-- The main board should stay a minimalist token-row table. Its PM signal column should show the market-implied nuke probability while also showing the nuke target as the remaining percentage drop from the token's current observed price, not just from the original market anchor.
+- The main board should stay a minimalist token-row table. Its PM signal column should show implied move as `predicted/current - 1`, so upward implied moves are positive/green and downward implied moves are negative/red.
 - After the top markets were seeded, the main board returned to showing initialized/live markets by default so the primary toggle remains "Show uninitialized" and the board matches the Clay preview control model.
 
 ## EC2 Deploy

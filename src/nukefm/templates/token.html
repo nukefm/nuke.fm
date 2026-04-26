@@ -8,7 +8,7 @@
   {% set trader_state = "Signal waiting on seed" %}
   {% set trader_state_note = "This Bags market is staged with a scalar LONG/SHORT price range. Trading opens after the first funded liquidity deposit." %}
 {% elif market.state == "open" %}
-  {% set trader_state = "Signal live" %}
+  {% set trader_state = "Live prediction" %}
   {% set trader_state_note = "Live PM signal based on market price, liquidity, and the latest 24h-median Bags token price." %}
 {% elif market.state == "halted" %}
   {% set trader_state = "Signal paused" %}

@@ -352,8 +352,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "$1.00" in page_response.text
     assert "$1,234.50" in page_response.text
     assert "$0.00000000045" in page_response.text
-    assert "-265.85%" in page_response.text
-    assert "-265.85% from current price" not in page_response.text
+    assert "265.85%" in page_response.text
+    assert "265.85% from current price" not in page_response.text
     assert "from current price" in page_response.text
     assert "By 14 Jul" in page_response.text
     assert 'href="https://bags.fm/Mint333" target="_blank" rel="noopener">Bags token</a>' in page_response.text
@@ -371,7 +371,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Expiry" not in page_response.text
     assert "sort_by=expiry" not in page_response.text
     assert "State" in page_response.text
-    assert "Signal live" in page_response.text
+    assert "Live prediction" in page_response.text
     assert '<img class="token-avatar" src="https://example.test/alpha.png" alt="Alpha token image">' in page_response.text
     assert page_response.text.index("<span>ALPHA</span>") < page_response.text.index("<span>GAMMA</span>")
     assert "Scan which token markets are actionable right now." not in page_response.text
@@ -404,7 +404,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert detail_api_market["underlying_market_cap_usd"] == "0.000000000321"
     assert detail_api_market["pm_volume_24h_usdc"] == "1"
     assert detail_api_market["implied_price_usd"] == "0.00000000045"
-    assert detail_api_market["predicted_nuke_percent"] == "-265.85%"
+    assert detail_api_market["predicted_nuke_percent"] == "265.85%"
     assert detail_api_market["question"] == "What will GAMMA trade at by 2026-07-14?"
     assert detail_api_response.json()["hidden_active_markets"] == []
     assert detail_api_response.json()["current_market_chart"] == {

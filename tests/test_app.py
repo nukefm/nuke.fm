@@ -352,7 +352,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "$1,234.50" in page_response.text
     assert "$0.00000000045" in page_response.text
     assert "-265.85%" in page_response.text
-    assert "-265.85% from current price" in page_response.text
+    assert "-265.85% from current price" not in page_response.text
+    assert "from current price" in page_response.text
     assert "By 14 Jul" in page_response.text
     assert 'href="https://bags.fm/Mint333" target="_blank" rel="noopener">Bags token</a>' in page_response.text
     assert "Implied by predicted market cap" not in page_response.text

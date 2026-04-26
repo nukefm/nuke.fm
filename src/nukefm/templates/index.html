@@ -80,7 +80,7 @@
         </td>
         <td class="nuke-cell">
           <strong{% if nuke_sign_class %} class="{{ nuke_sign_class }}"{% endif %}>{{ percent_table_display(market.predicted_nuke_percent) or "Pending" }}</strong>
-          <small>{% if market.predicted_nuke_percent %}{{ percent_table_display(market.predicted_nuke_percent) }} from current price{% else %}Awaiting seed{% endif %}</small>
+          <small>{% if market.predicted_nuke_percent %}from current price{% else %}Awaiting seed{% endif %}</small>
           <small class="deadline-note">{{ short_deadline(market.expiry) or "Deadline pending" }}</small>
         </td>
         <td>{{ usd_table_display(market.implied_price_usd, preserve_tiny_price=true) or "Pending" }}</td>

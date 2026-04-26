@@ -65,6 +65,7 @@
 - `ops/ec2/sync-state.sh` must not restore the SQLite DB by default. Database restore is now an explicit `--with-db` action because a failed later secret import previously clobbered live state.
 - `ingest` must stay a catalog/metric refresh command. Do not create on-chain market liquidity accounts there; `sync-market-liquidity` owns that side effect so low treasury SOL cannot block public board freshness.
 - The board/API display token market cap from the latest `token_metrics_snapshots.underlying_market_cap_usd`, independent of prediction-market liquidity state. `market_snapshots` remain the settlement/reference-price series for active markets, not the token market-cap display source.
+- SQLite write contention is expected on EC2 because timers, reads, and private trading share one DB. Keep incidental read paths read-only and use SQLite busy waiting for legitimate writes instead of treating brief writer overlap as an application failure.
 
 ## Live Data Dependencies
 
@@ -105,4 +106,4 @@
 - The first trader bot is a repo-local nested Python subproject under `bots/trader`, not a git submodule and not another `nukefm` CLI command.
 - Its fair-price source is an OpenRouter call to `moonshotai/kimi-k2.6` with the `openrouter:web_search` server tool enabled. The bot asks for a cited USD price forecast at market expiry, maps that forecast into the scalar LONG target, then buys LONG or SHORT through the private API inside risk caps.
 - Missing or invalid forecasts intentionally produce no-trade records. Do not replace them with spot/reference-price fallbacks because that would change the bot's strategy semantics.
-- The first live bot run showed Kimi/OpenRouter sometimes returned null, prose/non-JSON, or non-decimal forecast content despite prompt-only JSON instructions. Use OpenRouter structured outputs for forecast calls; do not loosen parsing or synthesize a forecast when the schema is not satisfied.
+- The first live bot run showed Kimi/OpenRouter sometimes returned null, prose/non-JSON, or non-decimal forecast content despite prompt-only JSON instructions. Use OpenRouter structured outputs with numeric forecast fields for forecast calls; do not loosen parsing or synthesize a forecast when the schema is not satisfied.

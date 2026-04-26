@@ -542,12 +542,12 @@ def forecast_response_format() -> dict:
                 "additionalProperties": False,
                 "properties": {
                     "forecast_price_usd": {
-                        "type": "string",
-                        "description": "Positive decimal USD price forecast at market expiry.",
+                        "type": "number",
+                        "description": "Positive USD price forecast at market expiry.",
                     },
                     "confidence": {
-                        "type": "string",
-                        "description": "Decimal confidence from 0 to 1.",
+                        "type": "number",
+                        "description": "Confidence from 0 to 1.",
                     },
                     "rationale": {
                         "type": "string",

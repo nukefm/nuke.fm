@@ -161,7 +161,9 @@ class OpenRouterForecaster:
                         "content": (
                             "Forecast the token's USD price at the listed market expiry. "
                             "Use web search when useful. Return only JSON with keys "
-                            "forecast_price_usd, confidence, rationale, sources."
+                            "forecast_price_usd, confidence, rationale, sources. "
+                            "forecast_price_usd and confidence must be JSON numbers. "
+                            "confidence must be between 0 and 1; never use words like low, medium, or high."
                         ),
                     },
                     {"role": "user", "content": json.dumps(forecast_context(token), sort_keys=True)},

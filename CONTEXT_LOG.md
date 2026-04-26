@@ -80,6 +80,7 @@
 
 - The token detail overlay chart uses its own `market_chart_snapshots` table and 5-minute EC2 timer instead of reusing hourly settlement snapshots. That separation is intentional: the chart is a trader-facing read, while hourly settlement snapshots remain the canonical resolution/reference path.
 - Each chart row stores both the current token USD price and the current market `YES` probability at the same bucketed timestamp so the frontend can render one aligned dual-axis overlay without stitching together mismatched histories at read time.
+- Rolled active market series should be included in the token detail chart once their rows have been normalized to `implied_price_usd`; the user cares about easy prediction viewing more than preserving contract-series separation in the chart. Keep contract details available elsewhere, but do not hide older live predictions from the main chart solely because bounds/expiry/pool state differ.
 
 ## Fixed-Anchor Market Lifecycle
 
@@ -104,3 +105,4 @@
 - The first trader bot is a repo-local nested Python subproject under `bots/trader`, not a git submodule and not another `nukefm` CLI command.
 - Its fair-price source is an OpenRouter call to `moonshotai/kimi-k2.6` with the `openrouter:web_search` server tool enabled. The bot asks for a cited USD price forecast at market expiry, maps that forecast into the scalar LONG target, then buys LONG or SHORT through the private API inside risk caps.
 - Missing or invalid forecasts intentionally produce no-trade records. Do not replace them with spot/reference-price fallbacks because that would change the bot's strategy semantics.
+- The first live bot run showed Kimi/OpenRouter sometimes returned null, prose/non-JSON, or non-decimal forecast content despite prompt-only JSON instructions. Use OpenRouter structured outputs for forecast calls; do not loosen parsing or synthesize a forecast when the schema is not satisfied.

@@ -13,6 +13,7 @@ from nukefm_trader_bot.bot import (
     OpenRouterForecaster,
     TradeDecision,
     TraderBot,
+    forecast_response_format,
     parse_forecast,
 )
 
@@ -122,6 +123,11 @@ def test_parse_forecast_requires_positive_price() -> None:
             '{"forecast_price_usd": "0", "confidence": "0.7", "rationale": "x", "sources": []}',
             created_at=datetime(2026, 4, 26, tzinfo=UTC),
         )
+
+
+def test_parse_forecast_requires_content() -> None:
+    with pytest.raises(ValueError, match="no forecast content"):
+        parse_forecast(None, created_at=datetime(2026, 4, 26, tzinfo=UTC))
 
 
 def test_bot_trades_long_toward_forecast(tmp_path: Path) -> None:
@@ -267,3 +273,4 @@ def test_openrouter_forecaster_uses_kimi_with_web_search(monkeypatch) -> None:
             },
         }
     ]
+    assert fake_session.payload["response_format"] == forecast_response_format()

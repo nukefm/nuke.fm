@@ -176,6 +176,7 @@ class OpenRouterForecaster:
                         },
                     }
                 ],
+                "response_format": forecast_response_format(),
             },
             timeout=120,
         )
@@ -530,7 +531,43 @@ def forecast_context(token: dict) -> dict:
     }
 
 
-def parse_forecast(content: str, *, created_at: datetime) -> Forecast:
+def forecast_response_format() -> dict:
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "nukefm_price_forecast",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "forecast_price_usd": {
+                        "type": "string",
+                        "description": "Positive decimal USD price forecast at market expiry.",
+                    },
+                    "confidence": {
+                        "type": "string",
+                        "description": "Decimal confidence from 0 to 1.",
+                    },
+                    "rationale": {
+                        "type": "string",
+                        "description": "Short rationale for the forecast.",
+                    },
+                    "sources": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": ["forecast_price_usd", "confidence", "rationale", "sources"],
+            },
+        },
+    }
+
+
+def parse_forecast(content: str | None, *, created_at: datetime) -> Forecast:
+    if content is None:
+        raise ValueError("OpenRouter returned no forecast content.")
+
     text = content.strip()
     if text.startswith("```"):
         lines = text.splitlines()

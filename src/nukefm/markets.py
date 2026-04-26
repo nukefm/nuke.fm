@@ -500,7 +500,11 @@ class MarketStore:
                     )
                     for row in past_market_rows
                 ],
-                "current_market_chart": self._serialize_current_market_chart(connection, current_market),
+                "current_market_chart": self._serialize_current_market_chart(
+                    connection,
+                    current_market,
+                    hidden_active_market_rows,
+                ),
                 "recent_activity": self._recent_activity(connection, current_market, token_row["updated_at"]),
             }
 
@@ -1702,7 +1706,14 @@ class MarketStore:
         )
         return f"What will {symbol} trade at by {deadline}?"
 
-    def _serialize_current_market_chart(self, connection: sqlite3.Connection, current_market: sqlite3.Row) -> dict:
+    def _serialize_current_market_chart(
+        self,
+        connection: sqlite3.Connection,
+        current_market: sqlite3.Row,
+        hidden_active_markets: list[sqlite3.Row],
+    ) -> dict:
+        market_ids = [row["id"] for row in hidden_active_markets]
+        market_ids.append(current_market["id"])
         return {
             "market_id": current_market["id"],
             "interval_minutes": MARKET_CHART_INTERVAL_MINUTES,
@@ -1712,7 +1723,7 @@ class MarketStore:
                     "underlying_price_usd": format_decimal(parse_decimal(row["underlying_price_usd"])),
                     "implied_price_usd": format_decimal(parse_decimal(row["implied_price_usd"])),
                 }
-                for row in self._market_chart_rows(connection, current_market["id"])
+                for row in self._market_chart_rows(connection, market_ids)
             ],
         }
 
@@ -2151,15 +2162,16 @@ class MarketStore:
         ).fetchone()
 
     @staticmethod
-    def _market_chart_rows(connection: sqlite3.Connection, market_id: int) -> list[sqlite3.Row]:
+    def _market_chart_rows(connection: sqlite3.Connection, market_ids: list[int]) -> list[sqlite3.Row]:
+        placeholders = ", ".join("?" for _ in market_ids)
         return connection.execute(
-            """
+            f"""
             SELECT captured_at, underlying_price_usd, implied_price_usd
             FROM market_chart_snapshots
-            WHERE market_id = ?
-            ORDER BY captured_at ASC
+            WHERE market_id IN ({placeholders})
+            ORDER BY captured_at ASC, market_id ASC
             """,
-            [market_id],
+            market_ids,
         ).fetchall()
 
     def _load_tradeable_market(self, connection: sqlite3.Connection, market_id: int) -> sqlite3.Row:

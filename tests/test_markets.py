@@ -776,6 +776,43 @@ def test_range_exit_creates_hidden_active_predecessor(tmp_path: Path) -> None:
     assert token["hidden_active_markets"][0]["state"] == "open"
     assert token["hidden_active_markets"][0]["is_frontend_visible"] is False
 
+    current_market_id = token["current_market"]["id"]
+    with connect_database(database_path) as connection:
+        connection.executemany(
+            """
+            INSERT INTO market_chart_snapshots (
+                market_id,
+                captured_at,
+                underlying_price_usd,
+                implied_price_usd
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                (first_market_id, "2026-04-15T12:55:00+00:00", "58", "30"),
+                (current_market_id, "2026-04-15T13:00:00+00:00", "60", "60"),
+            ],
+        )
+
+    token = market_store.get_token_detail("MintRoll")
+    assert token is not None
+    assert token["current_market_chart"] == {
+        "market_id": current_market_id,
+        "interval_minutes": 5,
+        "points": [
+            {
+                "captured_at": "2026-04-15T12:55:00+00:00",
+                "underlying_price_usd": "58",
+                "implied_price_usd": "30",
+            },
+            {
+                "captured_at": "2026-04-15T13:00:00+00:00",
+                "underlying_price_usd": "60",
+                "implied_price_usd": "60",
+            },
+        ],
+    }
+
     quoted = market_store.quote_trade(
         market_id=first_market_id,
         outcome="long",

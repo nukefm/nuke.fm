@@ -98,3 +98,9 @@
 - The scalar implementation records `scalar_long_short_reset` in `app_metadata` after destructive reset so old `threshold_price_usd` columns left behind by SQLite do not cause repeated market-state deletion on every startup.
 - Rollover transfers only AMM-owned complete sets: `floor(min(long_reserve, short_reserve) * market_rollover_liquidity_transfer_fraction)`. The successor is opened immediately if any liquidity transfers, even before a new on-chain market deposit address is assigned.
 - Token metric capture ignores API-reported market cap. Jupiter token data should provide supply; current market cap is derived from the latest stored 24h-median price and supply, while predicted market cap is derived from the AMM-implied price and the same supply.
+
+## LLM Trading Bot
+
+- The first trader bot is a repo-local nested Python subproject under `bots/trader`, not a git submodule and not another `nukefm` CLI command.
+- Its fair-price source is an OpenRouter call to `moonshotai/kimi-k2.6` with the `openrouter:web_search` server tool enabled. The bot asks for a cited USD price forecast at market expiry, maps that forecast into the scalar LONG target, then buys LONG or SHORT through the private API inside risk caps.
+- Missing or invalid forecasts intentionally produce no-trade records. Do not replace them with spot/reference-price fallbacks because that would change the bot's strategy semantics.

@@ -66,7 +66,7 @@
       <p class="decision-copy">Trailing 24h prediction trades.</p>
     </article>
     <article class="decision-card">
-      <p class="decision-label">Predicted nuke %</p>
+      <p class="decision-label">Implied move</p>
       <p class="decision-value{% if nuke_sign_class %} {{ nuke_sign_class }}{% endif %}">{{ market.predicted_nuke_percent or "Pending" }}</p>
       <p class="decision-copy">Derived from predicted vs current token market cap.</p>
     </article>

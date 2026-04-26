@@ -30,7 +30,7 @@ from .weighted_pool import (
 
 TOKEN_CARD_SORT_OPTIONS = (
     ("state", "State"),
-    ("predicted_nuke_percent", "Predicted nuke %"),
+    ("predicted_nuke_percent", "Implied move"),
     ("expiry", "Expiry"),
     ("pm_volume", "Prediction volume"),
     ("market_liquidity", "Prediction liquidity"),

@@ -357,7 +357,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "By 14 Jul" in page_response.text
     assert 'href="https://bags.fm/Mint333" target="_blank" rel="noopener">Bags token</a>' in page_response.text
     assert "Implied by predicted market cap" not in page_response.text
-    assert "Predicted nuke %" in page_response.text
+    assert "Implied move" in page_response.text
+    assert "Predicted nuke %" not in page_response.text
     assert "Prediction liquidity" in page_response.text
     assert "Prediction volume" in page_response.text
     assert "Token volume" in page_response.text

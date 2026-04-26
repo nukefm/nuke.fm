@@ -14,7 +14,7 @@ Use this skill when trading, monitoring, or seeding liquidity through the nuke.f
 - The token universe comes from Bags token mints.
 - Each token has one current frontend-visible market and may have hidden older active markets.
 - Current markets are scalar LONG/SHORT markets over the token's USD price at expiry.
-- The market displays an implied expiry price and a derived `predicted_nuke_percent`.
+- The market displays an implied expiry price and a derived implied move in `predicted_nuke_percent`.
 - Liquidity deposits are one-way. They do not mint LP shares and cannot be withdrawn.
 
 ## Public Data Workflow

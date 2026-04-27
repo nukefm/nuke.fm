@@ -443,8 +443,10 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Implied price" in detail_response.text
     assert "Spot vs predicted price" in detail_response.text
     assert "Predicted price (${chartDeadline})" in detail_response.text
-    assert 'borderColor: "#01418d"' in detail_response.text
-    assert 'backgroundColor: "rgba(1, 65, 141, 0.08)"' in detail_response.text
+    assert 'borderColor: "#000000"' in detail_response.text
+    assert 'backgroundColor: "rgba(0, 0, 0, 0.08)"' in detail_response.text
+    assert 'borderColor: "#078a52"' in detail_response.text
+    assert 'backgroundColor: "rgba(7, 138, 82, 0.08)"' in detail_response.text
     assert "PM " not in detail_response.text
     assert "Bags context" in detail_response.text
     assert "Bags mint" in detail_response.text

@@ -345,7 +345,9 @@
         scales: {
           x: {
             type: "linear",
+            bounds: "data",
             min: overlayPoints[0].timestamp,
+            max: overlayPoints[overlayPoints.length - 1].timestamp,
             grid: { color: "rgba(218, 212, 200, 0.4)" },
             ticks: {
               color: "#9f9b93",

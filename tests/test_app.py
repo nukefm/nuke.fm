@@ -446,6 +446,17 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Implied price" in detail_response.text
     assert "Spot vs predicted price" in detail_response.text
     assert "Predicted price (${chartDeadline})" in detail_response.text
+    assert "labels: overlayPoints.map" not in detail_response.text
+    assert "timestamp: Date.parse(point.captured_at)" in detail_response.text
+    assert "const firstPredictedPointIndex = parsedOverlayPoints.findIndex" in detail_response.text
+    assert "min: overlayPoints[0].timestamp" in detail_response.text
+    assert "data: overlayPoints.map((point) => ({ x: point.timestamp, y: point.spotPrice }))" in detail_response.text
+    assert "data: overlayPoints.map((point) => ({ x: point.timestamp, y: point.predictedPrice }))" in detail_response.text
+    assert 'type: "linear"' in detail_response.text
+    assert "const formatChartTick = (timestamp) => [" in detail_response.text
+    assert "chartTimeFormatter.format(timestamp)" in detail_response.text
+    assert "callback(value) { return formatChartTick(value); }" in detail_response.text
+    assert "title(context) {" in detail_response.text
     assert 'borderColor: "#000000"' in detail_response.text
     assert 'backgroundColor: "rgba(0, 0, 0, 0.08)"' in detail_response.text
     assert 'borderColor: "#078a52"' in detail_response.text

@@ -235,16 +235,42 @@
         maximumFractionDigits,
       }).format(value);
     };
-    const overlayPoints = chartPayload.points;
+    const chartDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+    const chartTimeFormatter = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
+    const chartTooltipFormatter = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    const formatChartTick = (timestamp) => [
+      chartDateFormatter.format(timestamp),
+      chartTimeFormatter.format(timestamp),
+    ];
+    const formatChartTime = (timestamp) => chartTooltipFormatter.format(timestamp);
+    const parsedOverlayPoints = chartPayload.points.map((point) => ({
+      timestamp: Date.parse(point.captured_at),
+      spotPrice: Number(point.underlying_price_usd),
+      predictedPrice: Number(point.implied_price_usd),
+    }));
+    const firstPredictedPointIndex = parsedOverlayPoints.findIndex((point) => (
+      Number.isFinite(point.timestamp) && Number.isFinite(point.predictedPrice)
+    ));
+    const overlayPoints = (firstPredictedPointIndex === -1 ? [] : parsedOverlayPoints.slice(firstPredictedPointIndex))
+      .filter((point) => (
+        Number.isFinite(point.timestamp)
+        && Number.isFinite(point.spotPrice)
+        && Number.isFinite(point.predictedPrice)
+      ));
 
-    new Chart(chartCanvas, {
+    if (overlayPoints.length > 0) {
+      new Chart(chartCanvas, {
       type: "line",
       data: {
-        labels: overlayPoints.map((point) => point.captured_at),
         datasets: [
           {
             label: "Spot price",
-            data: overlayPoints.map((point) => Number(point.underlying_price_usd)),
+            data: overlayPoints.map((point) => ({ x: point.timestamp, y: point.spotPrice })),
             yAxisID: "price",
             borderColor: "#000000",
             backgroundColor: "rgba(0, 0, 0, 0.08)",
@@ -255,7 +281,7 @@
           },
           {
             label: `Predicted price (${chartDeadline})`,
-            data: overlayPoints.map((point) => Number(point.implied_price_usd)),
+            data: overlayPoints.map((point) => ({ x: point.timestamp, y: point.predictedPrice })),
             yAxisID: "price",
             borderColor: "#078a52",
             backgroundColor: "rgba(7, 138, 82, 0.08)",
@@ -291,10 +317,10 @@
             bodyFont: { family: "'Space Mono', monospace", size: 12 },
             cornerRadius: 12,
             callbacks: {
+              title(context) {
+                return context.length > 0 ? formatChartTime(context[0].parsed.x) : "";
+              },
               label(context) {
-                if (context.dataset.yAxisID === "implied") {
-                  return `${context.dataset.label}: ${formatUsd(context.parsed.y)}`;
-                }
                 return `${context.dataset.label}: ${formatUsd(context.parsed.y)}`;
               },
             },
@@ -302,6 +328,8 @@
         },
         scales: {
           x: {
+            type: "linear",
+            min: overlayPoints[0].timestamp,
             grid: { color: "rgba(218, 212, 200, 0.4)" },
             ticks: {
               color: "#9f9b93",
@@ -309,6 +337,7 @@
               maxRotation: 0,
               autoSkip: true,
               maxTicksLimit: 6,
+              callback(value) { return formatChartTick(value); },
             },
           },
           price: {
@@ -323,7 +352,8 @@
           },
         },
       },
-    });
+      });
+    }
   }
 </script>
 {% endif %}

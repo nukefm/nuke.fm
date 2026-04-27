@@ -1,7 +1,7 @@
 [project]
 name = "nuke-fm"
 version = "0.1.0"
-description = "Read-only prediction market catalog for nuke.fm MVP"
+description = "Long-term price forecast markets for Bags project shares"
 authors = [
     { name = "distbit", email = "adp01@pm.me" },
 ]

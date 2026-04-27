@@ -258,6 +258,57 @@ h2 {
   margin-bottom: 1.25rem;
 }
 
+/* ── Board Intro ── */
+.board-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(20rem, 0.85fr);
+  gap: 2rem;
+  align-items: end;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--oat-border);
+}
+
+.board-intro h1 {
+  max-width: 15ch;
+  font-size: 4rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.board-intro-copy {
+  max-width: 48rem;
+  margin: 1rem 0 0;
+  color: var(--warm-charcoal);
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.intro-points {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.intro-points p {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--oat-light);
+}
+
+.intro-points strong {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.intro-points span {
+  color: var(--warm-silver);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
 /* ── Board Controls ── */
 .board-controls {
   display: flex;
@@ -876,10 +927,28 @@ dt { margin-bottom: 0.4rem; }
   margin-bottom: 1.25rem;
 }
 
-.about-grid {
+.about-grid,
+.qa-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.25rem;
+}
+
+.qa-list .detail-card {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+}
+
+.qa-list h2 {
+  font-size: 1.35rem;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.qa-list .section-copy {
+  font-size: 16px;
+  line-height: 1.55;
 }
 
 .detail-code-strip span {
@@ -1000,9 +1069,19 @@ select:focus-visible {
 
   .detail-layout,
   .about-grid,
+  .qa-list,
+  .board-intro,
   .board-controls {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .board-intro {
+    align-items: start;
+  }
+
+  .board-intro h1 {
+    font-size: 3rem;
   }
 
   .decision-strip {
@@ -1057,6 +1136,10 @@ select:focus-visible {
   .detail-heading h1,
   .detail-heading .headline-question {
     font-size: clamp(1.5rem, 7vw, 2rem);
+  }
+
+  .board-intro h1 {
+    font-size: 2.25rem;
   }
 
   .meta-note { display: none; }

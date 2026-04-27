@@ -4,48 +4,49 @@ nuke.fm turns trader bets into public price forecasts for Bags project shares.
 
 ## Goal
 
-nuke.fm is an offchain prediction market product for Bags tokens that settles in Solana USDC.
-Each token has a rolling series of markets that ask whether the token will nuke within the
-next 90 days after that market opens.
+nuke.fm is an offchain long-term price-forecast market for Bags tokens that settles in Solana USDC.
+Each token has a rolling scalar LONG/SHORT market that asks where the token will trade by expiry.
 
-This repository currently includes these MVP slices:
+The product adds a public forward price to the information Bags traders already watch. Spot price,
+volume, market cap, and social flow describe the current market. nuke.fm shows where traders and
+bots are willing to bet the project share will trade later.
 
-- ingest Bags token metadata into a local market catalog
-- create and maintain one frontend-visible fixed-anchor market per token
-- derive and publish one public USDC liquidity deposit address per active market
-- run a weighted YES/NO AMM per open market
-- reconcile one-way market liquidity deposits into pool depth and cash backing
-- quote and execute API-only trades against the weighted pool
-- capture hourly settlement snapshots from a rolling 24h median of Jupiter USD price candles
-- track each market against a fixed starting price, fixed nuke threshold, and fixed rollover range
-- capture Jupiter token metrics and sort the public market board by liquidity, dump %, underlying volume, or underlying market cap
-- debt-fund a weekly $1 PM seed into the top 4 current markets by underlying 24h volume
-- resolve markets from stored historical snapshots, roll the frontend-visible series when the price exits range, pay winning accounts, and record revenue sweeps
-- expose that catalog through a public JSON API
-- render the same catalog through a read-only web frontend
-- bootstrap private API access with Solana wallet signatures and API keys
-- issue per-user USDC deposit addresses
-- reconcile credited deposits into an internal ledger
-- accept withdrawals and process them through the operator CLI
-- expose account, position, trade, and portfolio data through the private API
+The frontend publishes market state, token context, chart history, bot rationales, and implied
+expiry prices. Wallet connection and trading stay API-only.
 
-The frontend still publishes market state only. Wallet connection and trading stay API-only.
+## Why It Exists
 
-## High-Level Model
+Memecoin traders often have to infer conviction from current spot flow, scattered posts, and private
+chats. That hides a useful question: where do informed traders think this project share trades after
+the immediate noise clears?
 
-- The canonical token identifier is the mint address.
+nuke.fm solves that by letting traders express both LONG and SHORT views in long-term markets. The
+public board converts those trades into an implied expiry price. Bearish views become priced instead
+of staying private, and bullish views have to compete against visible downside exposure.
+
+The predicted price should not always equal the underlying spot price. Spot is the current clearing
+price. nuke.fm's predicted price is a forward price for expiry, so it can trade above or below spot
+when traders expect future upside, future downside, or a change in risk before settlement.
+
+## Product Model
+
+- The canonical token identifier is the Bags token mint address.
 - Every token has one frontend-visible current market, zero or more hidden active markets, and zero or more past markets.
 - A market is created from a real observed token price and stores fixed lifecycle anchors up front:
   - starting price
-  - nuke threshold
-  - rollover range floor
-  - rollover range ceiling
-- Older rolled markets can stay active, tradable, and later resolvable even after the frontend moves on to a newer visible market.
+  - scalar minimum price
+  - scalar maximum price
+  - rollover boundaries
+- The weighted AMM prices LONG and SHORT exposure. LONG pays more when the expiry price is higher in the range. SHORT pays more when the expiry price is lower.
+- The live LONG price is inverted through the market's log-space payout curve to publish an implied expiry price.
+- Settlement uses stored rolling 24h-median token price snapshots rather than a single spot print.
+- Older rolled markets can stay active, tradable, and later resolvable after the frontend moves on to a newer visible market.
+- Bot rationales are token-level theses that explain a submitted forecast, sources, confidence, and current position value.
 - The public market term is `nuke`, not `rug`.
 
 ## How It Works
 
-At a high level, the app now has seven moving parts.
+At a high level, the app has seven moving parts.
 
 First, the ingestion command pulls canonical Bags token mints from the Bags pools API, hydrates
 each mint through Jupiter Tokens v2 by exact token address, and stores token metadata in a local
@@ -55,17 +56,16 @@ Second, the catalog layer stores token metadata and market state, while the mark
 creates missing visible markets from real observed prices during token-metric refreshes. On-chain
 market liquidity account creation remains part of `sync-market-liquidity`, not ingestion.
 
-Third, the market engine stores a weighted YES/NO pool for each active market. Liquidity deposits
-mint equal YES and NO inventory into the pool, then retune the weights so the displayed YES/NO
-prices stay unchanged at the instant of deposit. Buys spend USDC. Sells submit a share amount and
-the backend uses an integer binary search to find the largest exact USDC redemption that can be
-funded without inventing opposite-side dust. If atomic rounding prevents filling the full requested
-share amount exactly, the response reports the small unfilled remainder explicitly.
+Third, the market engine stores a weighted LONG/SHORT pool for each active market. Liquidity deposits
+mint equal LONG and SHORT inventory into the pool, then retune the weights so displayed prices stay
+unchanged at the instant of deposit. Buys spend USDC. Sells submit a share amount, and the backend
+uses an integer binary search to find the largest exact USDC redemption that can be funded without
+inventing opposite-side dust. If atomic rounding prevents filling the full requested share amount
+exactly, the response reports the small unfilled remainder explicitly.
 
 Fourth, the settlement loop captures hourly rolling 24h median reference prices from historical
-trade data, resolves `YES` when that monitored price first falls through the market's fixed
-threshold before expiry, resolves `NO` at expiry otherwise, and rolls the frontend-visible series
-forward when the monitored price leaves that market's configured range.
+trade data, resolves markets from the latest stored reference price at expiry, and rolls the
+frontend-visible series forward when the monitored price leaves the useful scalar range.
 
 Fifth, the auth layer issues one-time challenges, verifies Solana wallet signatures, and mints
 API keys for private access.
@@ -75,19 +75,19 @@ seed in `secret-tool`, ensures the associated token accounts exist, reconciles d
 changes, broadcasts withdrawals from the platform treasury wallet, and sweeps resolved market
 deposit accounts back to the treasury USDC account.
 
-Seventh, the FastAPI app reads the catalog, AMM state, and account ledger and serves them in two forms:
+Seventh, the FastAPI app reads the catalog, AMM state, rationales, and account ledger and serves them in two forms:
 
 - JSON endpoints under `/v1/public`
 - JSON endpoints under `/v1/auth` and `/v1/private`
-- HTML pages for the market list and token detail views
+- HTML pages for the market list, token detail views, trade page, and how-it-works page
 
-The same SQLite database backs the public catalog, AMM state, settlement snapshots, and private
-ledger, while the frontend stays a thin read-only view over public market data.
+The same SQLite database backs the public catalog, AMM state, settlement snapshots, rationales, and
+private ledger, while the frontend stays a thin read-only view over public market data.
 
 ## Current Scope
 
-The current implementation now covers the market engine and settlement loop, but it is still an
-MVP. Important current constraints:
+The current implementation covers the market engine, settlement loop, read-only frontend, private
+trading API, and bot-facing rationale flow. Important current constraints:
 
 - market liquidity deposits are one-way only and do not mint LP shares
 - revenue sweep records the full internal leftover backing, but the on-chain transfer only sweeps
@@ -187,6 +187,7 @@ token-account creation, withdrawal broadcasts, and resolved-market revenue sweep
 - `GET /v1/public/tokens`
 - `GET /v1/public/tokens/{mint}`
 - `GET /`
+- `GET /how-it-works`
 - `GET /tokens/{mint}`
 
 The public token list and board support `sort_by` and `sort_direction` query parameters. Accepted
@@ -195,7 +196,7 @@ The public token list and board support `sort_by` and `sort_direction` query par
 
 The visible frontend question is dynamic:
 
-- `Will {symbol} nuke by {x}% by {date}?`
+- `What will {symbol} trade at by {date}?`
 
 `sync-token-metrics` now does double duty: it stores token metrics and creates any missing
 frontend-visible market using the current observed token price as the fixed market anchor.

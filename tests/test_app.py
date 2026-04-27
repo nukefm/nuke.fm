@@ -346,6 +346,9 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Trading stays in the API." not in page_response.text
     assert "Read-only" not in page_response.text
     assert 'href="/trade">Trade</a>' in page_response.text
+    assert 'href="/how-it-works">How it works</a>' in page_response.text
+    assert "Long-term price forecasts for Bags project shares" in page_response.text
+    assert "Short exposure" in page_response.text
     assert 'option value="market_liquidity" selected' in page_response.text
     assert 'option value="desc" selected' in page_response.text
     assert 'class="sort-heading' not in page_response.text
@@ -477,9 +480,16 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "<svg" in favicon_response.text
 
     about_response = client.get("/about")
-    assert about_response.status_code == 200
-    assert "Prediction-market signals for Bags tokens" in about_response.text
-    assert "Read-only web, API trading" in about_response.text
+    assert about_response.status_code == 404
+
+    how_it_works_response = client.get("/how-it-works")
+    assert how_it_works_response.status_code == 200
+    assert "Public forward prices for Bags project shares" in how_it_works_response.text
+    assert "What problem does this solve for memecoin traders?" in how_it_works_response.text
+    assert "Shouldn't the predicted price just equal the underlying price?" in how_it_works_response.text
+    assert "How do bots make predictions?" in how_it_works_response.text
+    assert "What is the point of prediction rationales?" in how_it_works_response.text
+    assert "How is this useful to traders?" in how_it_works_response.text
 
     trade_response = client.get("/trade")
     assert trade_response.status_code == 200

@@ -10,10 +10,10 @@
 - The public market term is `nuke`, not `rug`.
 - Each token has a rolling market series. When a market resolves, the next market is created immediately in `awaiting_liquidity`.
 - Each market tracks its own ATH from its own funding time. Earlier market outcomes do not affect later ATH tracking.
-- The trading model is an offchain backend-only weighted AMM between `YES` and `NO`, with displayed USDC prices derived from reserves and weights.
+- The trading model is an offchain backend-only weighted AMM between `LONG` and `SHORT`, with displayed USDC prices derived from reserves and weights.
 - The frontend is read-only. Trading, balances, positions, deposits, and withdrawals are API-only.
 - Market liquidity deposits are one-way USDC deposits into a market-specific address. They do not mint LP shares, cannot be withdrawn, and any remaining liquidity after settlement is swept to the platform as revenue.
-- Liquidity seeding is explicitly defined to mint equal YES and NO inventory while preserving the pre-deposit displayed price by retuning pool weights.
+- Liquidity seeding is explicitly defined to mint equal LONG and SHORT inventory while preserving the pre-deposit displayed price by retuning pool weights.
 
 ## First Deliverable Implementation
 
@@ -30,7 +30,7 @@
 
 ## Weighted AMM And Settlement
 
-- The weighted pool still uses Balancer-style weights as exponents. The MVP divergence is that liquidity deposits retune those exponent weights after equal YES/NO inventory is added so the displayed YES/NO price stays unchanged at deposit time.
+- The weighted pool still uses Balancer-style weights as exponents. The MVP divergence is that liquidity deposits retune those exponent weights after equal LONG/SHORT inventory is added so displayed prices stay unchanged at deposit time.
 - The sell API takes a requested share amount. The backend binary-searches the largest exact USDC redemption whose required share burn fits inside that request, and reports any tiny unfilled same-side remainder explicitly instead of creating hidden opposite-side dust.
 - Market liquidity accounts are derived from the same master seed as user deposit accounts, but the HMAC input is domain-separated as `market:{market_id}` instead of `user:{user_id}`.
 - Revenue sweep is split into two layers on purpose: the database records the full remaining internal market backing as platform revenue, while the on-chain sweep only moves the resolved market's dedicated USDC deposit account back to treasury because user trading stays offchain inside the shared treasury balance.
@@ -67,6 +67,13 @@
 - The board/API display token market cap from the latest `token_metrics_snapshots.underlying_market_cap_usd`, independent of prediction-market liquidity state. `market_snapshots` remain the settlement/reference-price series for active markets, not the token market-cap display source.
 - SQLite write contention is expected on EC2 because timers, reads, and private trading share one DB. Keep incidental read paths read-only and use SQLite busy waiting for legitimate writes instead of treating brief writer overlap as an application failure.
 
+## Product Positioning
+
+- Public copy should explain nuke.fm as long-term forward pricing for Bags project shares, not as a short-horizon price alert or generic prediction-market terminal.
+- The main conceptual split is spot versus forward price: spot is the current clearing price, while nuke.fm's implied price is the market's expiry forecast and can trade above or below spot.
+- Short exposure is part of the product's value proposition because it turns bearish Bags-token views into visible prices instead of private or purely spot-selling behavior.
+- The old `/about` page is intentionally replaced by `/how-it-works`; no compatibility redirect is required unless requested later.
+
 ## Live Data Dependencies
 
 - Token discovery now uses the Bags pools API as the source of truth for eligible token mints. Jupiter Tokens v2 is only a hydrator for exact mint-address metadata/price/supply; do not switch discovery back to Jupiter token or pool feeds because token symbols are not unique.
@@ -80,7 +87,7 @@
 ## Token Detail Charting
 
 - The token detail overlay chart uses its own `market_chart_snapshots` table and 5-minute EC2 timer instead of reusing hourly settlement snapshots. That separation is intentional: the chart is a trader-facing read, while hourly settlement snapshots remain the canonical resolution/reference path.
-- Each chart row stores both the current token USD price and the current market `YES` probability at the same bucketed timestamp so the frontend can render one aligned dual-axis overlay without stitching together mismatched histories at read time.
+- Each chart row stores both the current token USD price and the current market-implied expiry price at the same bucketed timestamp so the frontend can render one aligned price overlay without stitching together mismatched histories at read time.
 - Rolled active market series should be included in the token detail chart once their rows have been normalized to `implied_price_usd`; the user cares about easy prediction viewing more than preserving contract-series separation in the chart. Keep contract details available elsewhere, but do not hide older live predictions from the main chart solely because bounds/expiry/pool state differ.
 - The token detail chart should describe the market line as a prediction/predicted price rather than using the acronym "PM"; the intended fast read is current spot price versus the predicted expiry price on one shared USD axis.
 
@@ -89,7 +96,7 @@
 - New markets are no longer created blindly during catalog ingest. They are created from a real observed token price during token-metric capture so every market row can stamp fixed anchors up front.
 - Each market now stores `starting_price_usd`, `threshold_price_usd`, `range_floor_price_usd`, and `range_ceiling_price_usd` on the market row itself. The old ATH/drawdown threshold logic is no longer the active lifecycle rule.
 - Only one active market per token is frontend-visible. When that visible market's monitored price moves outside its configured range, the frontend rolls to a new successor market while the older market stays active, tradable, and publicly inspectable through `hidden_active_markets`.
-- The visible prompt is computed at read time as `Will {symbol} nuke by {x}% by {date}?` using the latest monitored price for that market rather than a permanently stored question string.
+- The visible prompt is computed at read time as `What will {symbol} trade at by {date}?` rather than a permanently stored question string.
 - Pre-anchor legacy rows are migrated in place from real observed prices during initialization so existing `market_id` values and their derived liquidity deposit addresses survive deploys. Truly dead legacy rows with no observed price and no attached market state are pruned; address-assigned but still unfunded rows are parked off-frontend and then reactivated in place later when a real price finally becomes available.
 
 ## Scalar LONG/SHORT Planning

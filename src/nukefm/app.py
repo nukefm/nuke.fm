@@ -379,8 +379,8 @@ def create_app(
             },
         )
 
-    @app.get("/about", response_class=HTMLResponse)
-    def about_page(request: Request):
+    @app.get("/how-it-works", response_class=HTMLResponse)
+    def how_it_works_page(request: Request):
         return TEMPLATES.TemplateResponse(
             request=request,
             name="about.html",

@@ -1,6 +1,22 @@
 {% extends "base.html" %}
 
 {% block content %}
+<section class="board-intro" aria-labelledby="board-intro-title">
+  <div>
+    <p class="eyebrow">Bags forecasts</p>
+    <h1 id="board-intro-title">Long-term price forecasts for Bags project shares</h1>
+    <p class="board-intro-copy">
+      nuke.fm converts LONG and SHORT prediction-market trades into public expiry-price forecasts for Bags tokens.
+      The markets run long enough for creator execution, liquidity, fundamentals, and narrative changes to matter.
+    </p>
+  </div>
+  <div class="intro-points" aria-label="Why these markets are useful">
+    <p><strong>Public forward prices</strong><span>Market prices show where traders think each Bags token will trade by expiry.</span></p>
+    <p><strong>Longer exposure</strong><span>These markets measure conviction beyond immediate spot flow and short-term momentum.</span></p>
+    <p><strong>Short exposure</strong><span>Bearish views become priced instead of staying private, which makes the public forecast sharper.</span></p>
+  </div>
+</section>
+
 {% if total_token_count > 0 %}
 <section class="board-controls">
   <div class="board-summary">

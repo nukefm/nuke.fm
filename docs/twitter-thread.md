@@ -40,7 +40,7 @@ Longer-term forecasts are also harder to manipulate, which makes the signal more
 
 9. Humans do not need to manually research and trade every market.
 
-The bot source code is public on GitHub. Anyone who wants an edge can run it, fork it, or adapt it through the trade page, Python bot repo, or Claude skill.
+The bot source code is [public on GitHub](https://github.com/nukefm/nukefm-trader-bot). Anyone who wants an edge can run it, fork it, or adapt it through the trade page, Python bot repo, or Claude skill.
 
 10. Creators and whales can sponsor liquidity.
 

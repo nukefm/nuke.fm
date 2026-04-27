@@ -451,7 +451,9 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "const firstPredictedPointIndex = parsedOverlayPoints.findIndex" in detail_response.text
     assert "min: overlayPoints[0].timestamp" in detail_response.text
     assert "data: overlayPoints.map((point) => ({ x: point.timestamp, y: point.spotPrice }))" in detail_response.text
-    assert "data: overlayPoints.map((point) => ({ x: point.timestamp, y: point.predictedPrice }))" in detail_response.text
+    assert "const smoothChartSeries = (points, priceKey) => {" in detail_response.text
+    assert "const smoothingPeriod = Math.min(12, points.length);" in detail_response.text
+    assert 'data: smoothChartSeries(overlayPoints, "predictedPrice")' in detail_response.text
     assert 'type: "linear"' in detail_response.text
     assert "const formatChartTick = (timestamp) => [" in detail_response.text
     assert "chartTimeFormatter.format(timestamp)" in detail_response.text

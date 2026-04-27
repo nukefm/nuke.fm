@@ -262,6 +262,21 @@
         && Number.isFinite(point.spotPrice)
         && Number.isFinite(point.predictedPrice)
       ));
+    const smoothChartSeries = (points, priceKey) => {
+      if (points.length < 3) {
+        return points.map((point) => ({ x: point.timestamp, y: point[priceKey] }));
+      }
+
+      const smoothingPeriod = Math.min(12, points.length);
+      const smoothingFactor = 2 / (smoothingPeriod + 1);
+      let smoothedPrice = points[0][priceKey];
+      return points.map((point, index) => {
+        if (index > 0) {
+          smoothedPrice += (point[priceKey] - smoothedPrice) * smoothingFactor;
+        }
+        return { x: point.timestamp, y: smoothedPrice };
+      });
+    };
 
     if (overlayPoints.length > 0) {
       new Chart(chartCanvas, {
@@ -282,7 +297,7 @@
           },
           {
             label: `Predicted price (${chartDeadline})`,
-            data: overlayPoints.map((point) => ({ x: point.timestamp, y: point.predictedPrice })),
+            data: smoothChartSeries(overlayPoints, "predictedPrice"),
             yAxisID: "price",
             borderColor: "#078a52",
             backgroundColor: "rgba(7, 138, 82, 0.08)",

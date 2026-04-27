@@ -454,11 +454,14 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "tension: 0.4" in detail_response.text
     assert "PM " not in detail_response.text
     assert "Bags context" in detail_response.text
-    assert "Bags mint" in detail_response.text
+    assert "Bags mint" not in detail_response.text
+    assert "USDC liquidity deposit address" in detail_response.text
+    assert "Send only Solana USDC to sponsor this prediction market" in detail_response.text
+    assert "Solana USDC only. Other tokens sent to this address may be lost." in detail_response.text
     assert 'href="https://bags.fm/Mint333" target="_blank" rel="noopener">Open on Bags</a>' in detail_response.text
     assert "Activation Gate" not in detail_response.text
     assert "Series mechanics" not in detail_response.text
-    assert detail_response.text.count("market-deposit-2") == 3
+    assert detail_response.text.count("market-deposit-2") == 2
     assert "snapshot-market-charts" not in detail_response.text
     assert "token-overlay-chart" in detail_response.text
     assert "cdn.jsdelivr.net/npm/chart.js" in detail_response.text

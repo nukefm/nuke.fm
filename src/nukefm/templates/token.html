@@ -40,6 +40,33 @@
 
   <p class="market-state-note">{{ trader_state_note }}</p>
 
+  <section class="liquidity-deposit-panel" aria-labelledby="liquidity-deposit-title">
+    <div class="liquidity-deposit-heading">
+      <div>
+        <p class="eyebrow">Market sponsorship</p>
+        <h2 id="liquidity-deposit-title">
+          USDC liquidity deposit address
+          <span class="tooltip-wrap">
+            <button class="tooltip-trigger" type="button" aria-label="What is this address for?">?</button>
+            <span class="tooltip-bubble" role="tooltip">
+              Send only Solana USDC to sponsor this prediction market's liquidity. Deposits are one-way, do not mint LP shares, and cannot be withdrawn.
+            </span>
+          </span>
+        </h2>
+      </div>
+      <a class="bags-token-link detail-bags-link" href="{{ token.bags_token_url }}" target="_blank" rel="noopener">Open on Bags</a>
+    </div>
+    {% if market.liquidity_deposit_address %}
+    <div class="address-row prominent-address-row">
+      <code class="address-block">{{ market.liquidity_deposit_address }}</code>
+      <button class="copy-button" type="button" data-copy="{{ market.liquidity_deposit_address }}">Copy</button>
+    </div>
+    <p class="liquidity-deposit-note">Solana USDC only. Other tokens sent to this address may be lost.</p>
+    {% else %}
+    <p class="availability-note">The USDC liquidity deposit address has not been assigned yet.</p>
+    {% endif %}
+  </section>
+
   <section class="decision-strip">
     <article class="decision-card decision-card-primary">
       <p class="decision-label">Implied price</p>
@@ -73,12 +100,6 @@
       <p class="decision-copy">Derived from predicted vs current token market cap.</p>
     </article>
   </section>
-
-  <div class="detail-code-strip">
-    <span>Bags mint</span>
-    <code>{{ token.mint }}</code>
-    <a class="bags-token-link detail-bags-link" href="{{ token.bags_token_url }}" target="_blank" rel="noopener">Open on Bags</a>
-  </div>
 </section>
 
 {% if token.rationales %}
@@ -162,10 +183,6 @@
       <dd>{{ short_deadline(market.expiry) or "Not started" }}</dd>
     </div>
     <div>
-      <dt>Liquidity deposit</dt>
-      <dd>{{ market.liquidity_deposit_address or "Pending assignment" }}</dd>
-    </div>
-    <div>
       <dt>Bags launch</dt>
       <dd>{{ token.launched_at or "Unavailable" }}</dd>
     </div>
@@ -174,14 +191,6 @@
       <dd>{{ token.creator or "Unavailable" }}</dd>
     </div>
   </dl>
-  {% if market.liquidity_deposit_address %}
-  <div class="address-row compact-address-row">
-    <code class="address-block">{{ market.liquidity_deposit_address }}</code>
-    <button class="copy-button" type="button" data-copy="{{ market.liquidity_deposit_address }}">Copy</button>
-  </div>
-  {% else %}
-  <p class="availability-note">The liquidity deposit address has not been assigned yet.</p>
-  {% endif %}
 </article>
 
 <section class="detail-card" style="margin-top: 1.25rem;">

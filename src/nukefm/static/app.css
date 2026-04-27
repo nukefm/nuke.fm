@@ -642,6 +642,102 @@ h2 {
   line-height: 1.50;
 }
 
+/* ── Liquidity Deposit ── */
+.liquidity-deposit-panel {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.25rem;
+  border: 1px solid var(--matcha-300);
+  border-radius: var(--r-card);
+  background: rgba(132, 231, 165, 0.12);
+}
+
+.liquidity-deposit-heading {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.liquidity-deposit-heading h2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin-top: 0.2rem;
+  font-size: 1.35rem;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.prominent-address-row .address-block {
+  background: var(--white);
+  border-color: var(--matcha-300);
+  color: var(--clay-black);
+  font-weight: 600;
+}
+
+.liquidity-deposit-note {
+  margin: 0;
+  color: var(--matcha-800);
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 600;
+}
+
+.tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tooltip-trigger {
+  display: inline-flex;
+  width: 1.35rem;
+  height: 1.35rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--matcha-600);
+  border-radius: var(--r-pill);
+  background: var(--white);
+  color: var(--matcha-800);
+  font-family: var(--font-primary);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+
+.tooltip-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.65rem);
+  z-index: 20;
+  width: min(19rem, calc(100vw - 2rem));
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--oat-border);
+  border-radius: var(--r-card);
+  background: var(--clay-black);
+  color: var(--white);
+  box-shadow: var(--clay-shadow);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0;
+  opacity: 0;
+  pointer-events: none;
+  text-transform: none;
+  transform: translate(-50%, 0.35rem);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.tooltip-wrap:hover .tooltip-bubble,
+.tooltip-trigger:focus + .tooltip-bubble,
+.tooltip-trigger:focus-visible + .tooltip-bubble {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 /* ── Bot Rationales ── */
 .rationale-card {
   display: grid;
@@ -1094,6 +1190,7 @@ select:focus-visible {
 
   .detail-topline,
   .ops-banner,
+  .liquidity-deposit-heading,
   .detail-section-heading {
     display: grid;
     gap: 0.75rem;

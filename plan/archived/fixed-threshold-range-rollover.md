@@ -34,7 +34,7 @@ where `{x}%` is derived from the current observed price versus that market's fix
   - a threshold derived from ATH
 - Market resolution currently means:
   - resolve `YES` when price later falls below an ATH-derived threshold
-  - otherwise resolve `NO` at expiry
+  - otherwise resolve `NO` at the market end date
 - Public token serialization currently exposes one `current_market` plus `past_markets`, which means an older still-open market would disappear from both frontend and API detail shapes if a second active market were introduced.
 
 ## Chosen Approach
@@ -87,8 +87,8 @@ This replaces the old single `market_threshold_fraction` config key. Do not keep
 
 Resolution rule:
 
-1. A market resolves `YES` on the first monitored snapshot at or below that market's fixed `threshold_price_usd` before expiry.
-2. A market resolves `NO` at expiry if no such threshold breach occurred.
+1. A market resolves `YES` on the first monitored snapshot at or below that market's fixed `threshold_price_usd` before the market end date.
+2. A market resolves `NO` at the market end date if no such threshold breach occurred.
 
 This means the old ATH, ATH timestamp, and drawdown-derived threshold are no longer the operative logic and should be removed from the active behavior.
 
@@ -151,7 +151,7 @@ Render the visible market prompt as:
 
 Where:
 
-- `{date}` is the market expiry date
+- `{date}` is the market end date
 - `{x}%` is the remaining drop from the current observed price to this market's fixed threshold price
 
 Recommended calculation:
@@ -228,7 +228,7 @@ If implementation needs any additional explicit lifecycle knobs, they should als
   - superseded market remains active but frontend-hidden
   - public token detail exposes hidden active markets
   - fixed-threshold `YES` resolution
-  - expiry-based `NO` resolution
+  - market-end-based `NO` resolution
   - frontend question text uses the dynamic `{x}%` wording
 - Run `uv run --env-file .env pytest`.
 

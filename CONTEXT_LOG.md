@@ -69,9 +69,13 @@
 
 ## Product Positioning
 
-- Public copy should explain nuke.fm as long-term forward pricing for Bags project shares, not as a short-horizon price alert or generic prediction-market terminal.
-- The main conceptual split is spot versus forward price: spot is the current clearing price, while nuke.fm's implied price is the market's expiry forecast and can trade above or below spot.
-- Short exposure is part of the product's value proposition because it turns bearish Bags-token views into visible prices instead of private or purely spot-selling behavior.
+- Public copy should explain nukefm.xyz as AI agents betting on the long-term price of bags.fm tokens, producing forecasts that help bags.fm investors trade more confidently.
+- Avoid technical finance jargon for predicted-price framing in public copy and docs. Avoid market-lifecycle language that can imply the token itself expires; say "market end date" or "settlement" where appropriate.
+- The main conceptual split is spot versus predicted price: spot tokens are mostly one-sided because skeptics often cannot short directly, while nuke.fm creates a two-sided market where AI agents can price both upside and downside.
+- Prediction rationales are part of the user value proposition. The product should describe forecasts and rationales together because token detail pages expose bot theses, sources, confidence, and position value.
+- Short exposure is part of the product's value proposition because it lets negative information enter the public forecast instead of staying on the sidelines while unaware traders buy expensive memecoins.
+- Liquidity deposits should be framed as market sponsorship by bags.fm creators or whales, not as liquidity-provider yield. Deposits are one-way, do not mint LP shares, cannot be withdrawn, and exist to make the AI forecast more tradable and credible as a long-term support signal.
+- Public copy should explain that only bots trade because long-term price forecasts are research-heavy and less immediately fun for humans, while agents are more willing to research, wait, and trade before liquidity is deep.
 - The old `/about` page is intentionally replaced by `/how-it-works`; no compatibility redirect is required unless requested later.
 
 ## Live Data Dependencies
@@ -87,9 +91,9 @@
 ## Token Detail Charting
 
 - The token detail overlay chart uses its own `market_chart_snapshots` table and 5-minute EC2 timer instead of reusing hourly settlement snapshots. That separation is intentional: the chart is a trader-facing read, while hourly settlement snapshots remain the canonical resolution/reference path.
-- Each chart row stores both the current token USD price and the current market-implied expiry price at the same bucketed timestamp so the frontend can render one aligned price overlay without stitching together mismatched histories at read time.
-- Rolled active market series should be included in the token detail chart once their rows have been normalized to `implied_price_usd`; the user cares about easy prediction viewing more than preserving contract-series separation in the chart. Keep contract details available elsewhere, but do not hide older live predictions from the main chart solely because bounds/expiry/pool state differ.
-- The token detail chart should describe the market line as a prediction/predicted price rather than using the acronym "PM"; the intended fast read is current spot price versus the predicted expiry price on one shared USD axis.
+- Each chart row stores both the current token USD price and the current market-implied price for the market end date at the same bucketed timestamp so the frontend can render one aligned price overlay without stitching together mismatched histories at read time.
+- Rolled active market series should be included in the token detail chart once their rows have been normalized to `implied_price_usd`; the user cares about easy prediction viewing more than preserving contract-series separation in the chart. Keep contract details available elsewhere, but do not hide older live predictions from the main chart solely because bounds, market end date, or pool state differ.
+- The token detail chart should describe the market line as a prediction/predicted price rather than using the acronym "PM"; the intended fast read is current spot price versus the predicted market-end price on one shared USD axis.
 
 ## Fixed-Anchor Market Lifecycle
 
@@ -112,7 +116,7 @@
 ## LLM Trading Bot
 
 - The LLM trader bot now lives as the `bots/trader` submodule pointing at `nukefm/nukefm-trader-bot`; the standalone Claude skill lives as `.claude/skills/nukefm-forecast-trader` pointing at `nukefm/nukefm-forecast-trader-skill`.
-- Its fair-price source is an OpenRouter call to `moonshotai/kimi-k2.6` with the `openrouter:web_search` server tool enabled. The bot asks for a cited USD price forecast at market expiry, maps that forecast into the scalar LONG target, then buys LONG or SHORT through the private API inside risk caps.
+- Its fair-price source is an OpenRouter call to `moonshotai/kimi-k2.6` with the `openrouter:web_search` server tool enabled. The bot asks for a cited USD price forecast at the market end date, maps that forecast into the scalar LONG target, then buys LONG or SHORT through the private API inside risk caps.
 - Missing or invalid forecasts intentionally produce no-trade records. Do not replace them with spot/reference-price fallbacks because that would change the bot's strategy semantics.
 - The first live bot run showed Kimi/OpenRouter sometimes returned null, prose/non-JSON, or non-decimal forecast content despite prompt-only JSON instructions. Use OpenRouter structured outputs with numeric forecast fields for forecast calls; do not loosen parsing or synthesize a forecast when the schema is not satisfied.
 - The PUNCH live forecast on 2026-04-26 exposed a source-hygiene issue: web search latched onto CoinMarketCap's `PUNCH` page for contract `NV2RYH...FSpump`, while the Bags market mint was `H1Ckn...BAGS`. Bot/skill forecasts must treat nuke.fm/Bags mint, reference price, and market cap as canonical and only use external price data when the external source verifies the exact same mint.

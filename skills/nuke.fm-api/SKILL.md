@@ -13,8 +13,8 @@ Use this skill when trading, monitoring, or seeding liquidity through the nuke.f
 - Private workflows happen through API keys.
 - The token universe comes from Bags token mints.
 - Each token has one current frontend-visible market and may have hidden older active markets.
-- Current markets are scalar LONG/SHORT markets over the token's USD price at expiry.
-- The market displays an implied expiry price and a derived implied move in `predicted_nuke_percent`.
+- Current markets are scalar LONG/SHORT markets over the token's USD price on the market end date.
+- The market displays a predicted price and a derived implied move in `predicted_nuke_percent`.
 - Liquidity deposits are one-way. They do not mint LP shares and cannot be withdrawn.
 
 ## Public Data Workflow
@@ -25,7 +25,7 @@ Use the public API to:
 - fetch one token detail with `GET /v1/public/tokens/{mint}`
 - inspect `current_market.state`
 - read `long_price_usd`, `short_price_usd`, and `implied_price_usd`
-- read `min_price_usd`, `max_price_usd`, `market_start`, and `expiry`
+- read `min_price_usd`, `max_price_usd`, `market_start`, and the market end timestamp
 - read `reference_price_usd`, liquidity, 24h PM volume, and underlying token metrics
 - read `bags_token_url` for the external Bags token page
 
@@ -77,7 +77,8 @@ Wait for deposits to be credited before assuming funds are tradable.
 
 ## Liquidity Seeding Workflow
 
-Anyone can deposit USDC to a current market's liquidity address.
+Liquidity deposits sponsor a market; they are not yield positions. Anyone can deposit USDC to a current
+market's liquidity address, but deposits do not mint LP shares and cannot be withdrawn.
 
 1. Fetch the current market's liquidity deposit address.
 2. Confirm the market is `awaiting_liquidity` or `open`.

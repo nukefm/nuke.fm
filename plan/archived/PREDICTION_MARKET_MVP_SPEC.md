@@ -29,7 +29,7 @@ The canonical token identifier is the mint address. Symbol and name are display 
 
 This creates a continuous forward-looking market series for each token. There is always a current forward market record for the token, even if that current market is still waiting for liquidity. A token can have many past markets even if it already nuked in an earlier one.
 
-### Market Start And Expiry
+### Market Start And End
 
 - `MARKET_START` is the timestamp when the first liquidity deposit for that market is credited.
 - `EXPIRY` is `MARKET_START + 90 days`.
@@ -155,7 +155,7 @@ The main page should show:
 - current ATH
 - current drawdown from ATH
 - current threshold price
-- time to expiry for open markets
+- time to market end for open markets
 - public liquidity deposit address for the current market
 
 The market list should include tokens whose current market is still `awaiting_liquidity`.
@@ -171,7 +171,7 @@ Each token page should show:
 - ATH and ATH timestamp
 - current drawdown from ATH
 - current threshold price
-- market start and expiry
+- market start and end
 - current market liquidity deposit address
 - recent market activity summary
 - list of past resolved markets for the same token, including outcome and dates
@@ -207,7 +207,7 @@ The public API should provide:
 - ATH timestamp
 - current drawdown
 - current threshold price
-- market start and expiry
+- market start and end
 - current market state
 - market liquidity deposit address
 

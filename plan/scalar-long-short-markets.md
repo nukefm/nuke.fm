@@ -2,7 +2,7 @@
 
 ## Goal
 
-Convert the current binary nuke market into one scalar price market lifecycle. The market should predict the token price at expiry, expose that as an implied price and implied nuke percentage, and roll to a new market when the old scalar range stops being informative.
+Convert the current binary nuke market into one scalar price market lifecycle. The market should predict the token price at the market end date, expose that as an implied price and implied nuke percentage, and roll to a new market when the old scalar range stops being informative.
 
 ## Core Model
 
@@ -26,10 +26,10 @@ Convert the current binary nuke market into one scalar price market lifecycle. T
 
 ## Settlement
 
-- Replace binary threshold settlement with expiry-based scalar settlement.
+- Replace binary threshold settlement with market-end-based scalar settlement.
 - Settlement price is the stored rolling 24h median reference price from `market_snapshots`. Use that same 24h median consistently for scalar settlement, rollover trigger checks, current observed price, and deterministic underlying-implied LONG rate calculations.
-- At expiry, resolve from the latest real stored 24h-median market snapshot at or before expiry.
-- If no valid stored snapshot exists at or before expiry, do not synthesize a fallback from the starting price. Leave the market unresolved and log a clear warning so the operator can repair snapshots or explicitly void the market.
+- At the market end date, resolve from the latest real stored 24h-median market snapshot at or before that time.
+- If no valid stored snapshot exists at or before the market end date, do not synthesize a fallback from the starting price. Leave the market unresolved and log a clear warning so the operator can repair snapshots or explicitly void the market.
 - Pay each account for both legs: `long_shares * long_rate + short_shares * short_rate`.
 - Round each user payout down to integer atomic USDC, sum actual paid amounts, and sweep residual rounding dust with remaining backing as platform revenue. Never round user payouts up.
 - Record payout rows with enough context to audit the scalar rates used at resolution.
@@ -57,15 +57,15 @@ Convert the current binary nuke market into one scalar price market lifecycle. T
 
 ## Frontend And API
 
-- Add public serialization fields for `long_price_usd`, `short_price_usd`, `implied_price_usd`, `predicted_market_cap_usd`, `predicted_nuke_percent`, `min_price_usd`, `max_price_usd`, and the expiry date.
+- Add public serialization fields for `long_price_usd`, `short_price_usd`, `implied_price_usd`, `predicted_market_cap_usd`, `predicted_nuke_percent`, `min_price_usd`, `max_price_usd`, and the market end date.
 - Stop ingesting reported market cap from external APIs. Capture token price and supply instead, then derive market cap as `supply * price`.
 - Use Jupiter Tokens v2 supply data for supply. Prefer `circSupply`; if `circSupply` is missing, use `totalSupply` only if the UI/API labels the result as fully diluted. If neither supply exists, keep current and predicted market cap fields `null`.
 - Derive current market cap as `supply * current_24h_median_price` when both are available.
 - Derive predicted market cap as `supply * implied_price` when both are available.
 - Derive predicted nuke percent as `1 - predicted_market_cap / current_market_cap`. Allow it to go negative when the scalar market implies upside.
 - Keep missing metric data explicit as `null`; do not synthesize current market cap, current price, or implied price.
-- Update the main table columns to include predicted nuke %, implied price, and expiry before PM volume, PM liquidity, underlying volume, and underlying market cap.
-- Remove old `dump_percentage` sorting. Supported board sorts should use only scalar/current fields that still exist after the model change, such as predicted nuke %, implied price, expiry, PM volume, PM liquidity, underlying volume, and derived underlying market cap. Preserve null-last sorting in both directions.
+- Update the main table columns to include predicted nuke %, implied price, and market end date before PM volume, PM liquidity, underlying volume, and underlying market cap.
+- Remove old `dump_percentage` sorting. Supported board sorts should use only scalar/current fields that still exist after the model change, such as predicted nuke %, implied price, market end date, PM volume, PM liquidity, underlying volume, and derived underlying market cap. Preserve null-last sorting in both directions.
 - Update token-detail copy and charts away from chance-of-nuke language toward scalar implied-price language.
 - Store and render chart snapshots as market-implied price rather than binary chance percent.
 
@@ -76,7 +76,7 @@ Convert the current binary nuke market into one scalar price market lifecycle. T
 - Add rollover tests proving successor creation when one stored 24h-median snapshot touches the upper boundary and when one stored 24h-median snapshot touches the lower boundary.
 - Add liquidity-transfer tests proving only AMM-owned complete sets move and old-market trader positions remain solvent.
 - Add data-ingestion tests proving reported API market cap is ignored, market cap is derived as `supply * price`, and missing supply leaves market cap fields null.
-- Add API/frontend tests for implied price, expiry table column, predicted nuke percent, scalar chart data, scalar-only sort fields, and removal of visible YES/NO wording.
+- Add API/frontend tests for implied price, market-end table column, predicted nuke percent, scalar chart data, scalar-only sort fields, and removal of visible YES/NO wording.
 
 ## Validation
 

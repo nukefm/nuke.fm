@@ -25,8 +25,8 @@ Replace the current spot-price-based settlement path with a manipulation-resista
 - Compute `ath_price_usd` as the highest recorded median reference price since `market_start`.
 - Compute `threshold_price_usd` as `ath_price_usd * market_threshold_fraction`.
 - Compute `drawdown_fraction` from the current median reference price versus the ATH.
-- Resolve `YES` only when an hourly median reference price after the ATH timestamp falls at or below the threshold before expiry.
-- Resolve `NO` at expiry otherwise.
+- Resolve `YES` only when an hourly median reference price after the ATH timestamp falls at or below the threshold before the market end date.
+- Resolve `NO` at the market end date otherwise.
 
 ## Implementation Plan
 
@@ -40,7 +40,7 @@ Replace the current spot-price-based settlement path with a manipulation-resista
    - If Bitquery row volume and schema are manageable, persist the raw hourly trade inputs used to derive each median so settlement remains inspectable.
 5. Refactor snapshot capture so hourly market snapshots are derived from the trailing 24-hour trade window instead of a single point-in-time DexScreener poll.
 6. Keep the existing market-facing snapshot fields and API/template shape intact where possible, but change their semantics to median-based values.
-7. Fix `resolve_markets` so it resolves from any qualifying median-derived hourly snapshot before expiry instead of only the latest snapshot row.
+7. Fix `resolve_markets` so it resolves from any qualifying median-derived hourly snapshot before the market end date instead of only the latest snapshot row.
 8. Make the resolution query inspect the historical snapshot series for each unresolved market and resolve `YES` on the first qualifying post-ATH breach.
 9. Update docs and config:
    - document that settlement reference prices are 24-hour rolling medians

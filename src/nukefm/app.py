@@ -28,6 +28,8 @@ from .treasury import SolanaTreasury
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
+TRADER_BOT_REPO_URL = "https://github.com/nukefm/nukefm-trader-bot"
+CLAUDE_SKILL_REPO_URL = "https://github.com/nukefm/nukefm-forecast-trader-skill"
 TEMPLATES = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
 TEMPLATES.env.globals["usd_display"] = format_usd_display
 TEMPLATES.env.globals["usd_table_display"] = format_usd_table_display
@@ -384,7 +386,10 @@ def create_app(
         return TEMPLATES.TemplateResponse(
             request=request,
             name="about.html",
-            context={},
+            context={
+                "trader_bot_repo_url": TRADER_BOT_REPO_URL,
+                "claude_skill_repo_url": CLAUDE_SKILL_REPO_URL,
+            },
         )
 
     @app.get("/trade", response_class=HTMLResponse)
@@ -393,8 +398,8 @@ def create_app(
             request=request,
             name="trade.html",
             context={
-                "trader_bot_repo_url": "https://github.com/nukefm/nukefm-trader-bot",
-                "claude_skill_repo_url": "https://github.com/nukefm/nukefm-forecast-trader-skill",
+                "trader_bot_repo_url": TRADER_BOT_REPO_URL,
+                "claude_skill_repo_url": CLAUDE_SKILL_REPO_URL,
             },
         )
 

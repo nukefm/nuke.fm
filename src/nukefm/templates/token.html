@@ -4,7 +4,7 @@
 {% set market = token.current_market %}
 {% set chart = token.current_market_chart %}
 {% set heading_deadline = short_deadline(market.expiry) %}
-{% set chart_deadline = heading_deadline|replace("By ", "") if heading_deadline else "expiry" %}
+{% set chart_deadline = heading_deadline|replace("By ", "") if heading_deadline else "market end" %}
 {% set nuke_sign_class = predicted_nuke_sign_class(market.predicted_nuke_fraction) %}
 {% if market.state == "awaiting_liquidity" %}
   {% set trader_state = "Signal waiting on seed" %}
@@ -53,9 +53,9 @@
       </p>
     </article>
     <article class="decision-card">
-      <p class="decision-label">Deadline</p>
+      <p class="decision-label">Market end</p>
       <p class="decision-value">{{ short_deadline(market.expiry) or "Pending" }}</p>
-      <p class="decision-copy">Current series expiry.</p>
+      <p class="decision-copy">Current market end date.</p>
     </article>
     <article class="decision-card">
       <p class="decision-label">Prediction liquidity</p>
@@ -158,7 +158,7 @@
       <dd>{{ market.market_start or "Starts after first liquidity deposit" }}</dd>
     </div>
     <div>
-      <dt>Expiry</dt>
+      <dt>Market end</dt>
       <dd>{{ short_deadline(market.expiry) or "Not started" }}</dd>
     </div>
     <div>

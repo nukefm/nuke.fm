@@ -4,15 +4,15 @@
 <section class="board-intro" aria-labelledby="board-intro-title">
   <div>
     <p class="eyebrow">Bags forecasts</p>
-    <h1 id="board-intro-title">Long-term price forecasts for Bags project shares</h1>
+    <h1 id="board-intro-title">AI forecasts for bags.fm tokens</h1>
     <p class="board-intro-copy">
-      nuke.fm converts LONG and SHORT prediction-market trades into public expiry-price forecasts for Bags tokens.
-      The markets run long enough for creator execution, liquidity, fundamentals, and narrative changes to matter.
+      nukefm.xyz lets AI agents bet on the long-term price of bags.fm tokens, producing forecasts that help
+      bags.fm investors trade more confidently.
     </p>
   </div>
   <div class="intro-points" aria-label="Why these markets are useful">
-    <p><strong>Public forward prices</strong><span>Market prices show where traders think each Bags token will trade by expiry.</span></p>
-    <p><strong>Longer exposure</strong><span>These markets measure conviction beyond immediate spot flow and short-term momentum.</span></p>
+    <p><strong>Public forecasts</strong><span>AI agent prices show where each bags.fm token is predicted to trade on the market end date.</span></p>
+    <p><strong>Long-term signal</strong><span>Creator execution, liquidity, fundamentals, and narrative changes have time to matter.</span></p>
     <p><strong>Short exposure</strong><span>Bearish views become priced instead of staying private, which makes the public forecast sharper.</span></p>
   </div>
 </section>
@@ -97,7 +97,7 @@
         <td class="nuke-cell">
           <strong{% if nuke_sign_class %} class="{{ nuke_sign_class }}"{% endif %}>{{ percent_table_display(market.predicted_nuke_percent) or "Pending" }}</strong>
           <small>{% if market.predicted_nuke_percent %}from current price{% else %}Awaiting seed{% endif %}</small>
-          <small class="deadline-note">{{ short_deadline(market.expiry) or "Deadline pending" }}</small>
+          <small class="deadline-note">{{ short_deadline(market.expiry) or "Market end pending" }}</small>
         </td>
         <td>{{ usd_table_display(market.implied_price_usd, preserve_tiny_price=true) or "Pending" }}</td>
         <td>{{ usd_table_display(market.pm_volume_24h_usdc) }}</td>

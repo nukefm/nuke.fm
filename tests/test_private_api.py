@@ -11,6 +11,7 @@ from nukefm.app import create_app
 from nukefm.bags import BagsToken
 from nukefm.catalog import Catalog
 from nukefm.config import Settings
+from nukefm.database import connect_database
 from nukefm.dexscreener import DexScreenerPair
 from nukefm.treasury import DepositAccountAddresses
 
@@ -138,6 +139,7 @@ def _bootstrap_private_client(client: TestClient) -> tuple[str, str]:
     wallet_address = base58.b58encode(signing_key.verify_key.encode()).decode("utf-8")
 
     challenge_response = client.post("/v1/auth/challenge", json={"wallet_address": wallet_address})
+    assert challenge_response.status_code == 200
     challenge = challenge_response.json()
     signature = signing_key.sign(challenge["challenge_message"].encode("utf-8")).signature
     signature_base58 = base58.b58encode(signature).decode("utf-8")
@@ -150,7 +152,61 @@ def _bootstrap_private_client(client: TestClient) -> tuple[str, str]:
             "signature": signature_base58,
         },
     )
+    assert api_key_response.status_code == 200
     return wallet_address, api_key_response.json()["api_key"]
+
+
+def test_new_bot_account_bootstrap_creates_api_key_without_existing_account(tmp_path: Path) -> None:
+    settings = _make_settings(tmp_path)
+    account_store = AccountStore(settings.database_path)
+    account_store.initialize()
+    app = create_app(settings=settings, account_store=account_store, treasury=FakeTreasury())
+    client = TestClient(app)
+
+    with connect_database(settings.database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+
+    wallet_address, api_key = _bootstrap_private_client(client)
+
+    account_response = client.get("/v1/private/account", headers={"X-API-Key": api_key})
+    assert account_response.status_code == 200
+    assert account_response.json()["wallet_address"] == wallet_address
+    assert account_response.json()["account_balance_usdc"] == "0"
+
+    bearer_response = client.get("/v1/private/account", headers={"Authorization": f"Bearer {api_key}"})
+    assert bearer_response.status_code == 200
+    assert bearer_response.json()["wallet_address"] == wallet_address
+
+    with connect_database(settings.database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM api_keys").fetchone()[0] == 1
+
+
+def test_auth_api_reports_bootstrap_errors_as_bad_requests(tmp_path: Path) -> None:
+    settings = _make_settings(tmp_path)
+    account_store = AccountStore(settings.database_path)
+    account_store.initialize()
+    app = create_app(settings=settings, account_store=account_store, treasury=FakeTreasury())
+    client = TestClient(app)
+
+    invalid_wallet_response = client.post("/v1/auth/challenge", json={"wallet_address": "not-a-wallet"})
+    assert invalid_wallet_response.status_code == 400
+
+    signing_key = SigningKey.generate()
+    wallet_address = base58.b58encode(signing_key.verify_key.encode()).decode("utf-8")
+    challenge_response = client.post("/v1/auth/challenge", json={"wallet_address": wallet_address})
+    wrong_signature = SigningKey.generate().sign(challenge_response.json()["challenge_message"].encode("utf-8")).signature
+
+    api_key_response = client.post(
+        "/v1/auth/api-key",
+        json={
+            "wallet_address": wallet_address,
+            "challenge_id": challenge_response.json()["challenge_id"],
+            "signature": base58.b58encode(wrong_signature).decode("utf-8"),
+        },
+    )
+    assert api_key_response.status_code == 400
+    assert api_key_response.json()["detail"] == "Invalid wallet signature."
 
 
 def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:

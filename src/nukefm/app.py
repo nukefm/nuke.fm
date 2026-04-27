@@ -206,15 +206,21 @@ def create_app(
 
     @app.post("/v1/auth/challenge")
     def create_auth_challenge(body: ChallengeRequest) -> dict:
-        return auth_service.create_challenge(body.wallet_address)
+        try:
+            return auth_service.create_challenge(body.wallet_address)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post("/v1/auth/api-key")
     def create_api_key(body: ApiKeyExchangeRequest) -> dict:
-        return auth_service.exchange_api_key(
-            wallet_address=body.wallet_address,
-            challenge_id=body.challenge_id,
-            signature=body.signature,
-        )
+        try:
+            return auth_service.exchange_api_key(
+                wallet_address=body.wallet_address,
+                challenge_id=body.challenge_id,
+                signature=body.signature,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/v1/private/account")
     def private_account(

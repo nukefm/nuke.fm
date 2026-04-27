@@ -56,6 +56,7 @@
 - Token detail pages should prominently surface the USDC liquidity deposit address near the top as market-sponsorship UI. Make clear that only Solana USDC should be sent there, and do not use the top section for the Bags mint address.
 - The main board should stay a minimalist token-row table. Its PM signal column should show implied move as `predicted/current - 1`, so upward implied moves are positive/green and downward implied moves are negative/red.
 - After the top markets were seeded, the main board returned to showing initialized/live markets by default so the primary toggle remains "Show uninitialized" and the board matches the Clay preview control model.
+- Mobile board rendering should use token cards instead of a horizontally scrolled table. The table's min-width and sort controls previously widened the page and clipped intro/detail copy on phone-sized viewports.
 
 ## EC2 Deploy
 
@@ -124,3 +125,4 @@
 - The PUNCH live forecast on 2026-04-26 exposed a source-hygiene issue: web search latched onto CoinMarketCap's `PUNCH` page for contract `NV2RYH...FSpump`, while the Bags market mint was `H1Ckn...BAGS`. Bot/skill forecasts must treat nuke.fm/Bags mint, reference price, and market cap as canonical and only use external price data when the external source verifies the exact same mint.
 - Bot rationales are token-level state keyed by API account and Bags mint, independent of the trade endpoint. Bots should submit or update the rationale before trading so the public token page can show the latest thesis next to that bot's current marked value across all PM positions for the token.
 - `bots/noise-trader/` is deliberately gitignored and local-only. It exists for controlled tiny random trades to exercise volume display, not as product code.
+- A bot API account does not require pre-funding or an existing nuke.fm account. A fresh Solana signing key can request `POST /v1/auth/challenge`, sign the returned message exactly, exchange it at `POST /v1/auth/api-key`, and then use the API key for private bot calls. Do not call the deposit-address endpoint just to test auth because it can create funding-related on-chain state.

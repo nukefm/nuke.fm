@@ -1,0 +1,1 @@
+remove references to optimistic and noise bots

@@ -817,17 +817,98 @@ h2 {
 /* ── Trade Page ── */
 .trade-page-card {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 44rem;
+  min-width: 0;
+}
+
+.trade-hero {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.trade-hero .headline-question {
+  max-width: 10ch;
+  font-size: 4rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.trade-hero .section-copy {
+  max-width: 40rem;
+  color: var(--warm-charcoal);
+  overflow-wrap: anywhere;
+}
+
+.trade-agent-prompt {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 1.35rem 1.5rem;
+  border-radius: var(--r-standard);
+  background: #17191d;
+  border: 1px solid #272c33;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.trade-agent-prompt code {
+  display: block;
+  color: #00e5cc;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.trade-agent-prompt:hover code {
+  color: #84ffe8;
+}
+
+.trade-steps {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: trade-step;
+}
+
+.trade-steps li {
+  counter-increment: trade-step;
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  color: var(--warm-charcoal);
+  font-size: 1rem;
+}
+
+.trade-steps li::before {
+  content: counter(trade-step) ".";
+  flex: 0 0 auto;
+  color: var(--pomegranate-400);
+  font-weight: 700;
+}
+
+.trade-steps span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .trade-link-list {
   display: grid;
+  margin-top: 0.25rem;
   border-top: 1px solid var(--oat-light);
 }
 
 .trade-link-row {
   display: grid;
   gap: 0.25rem;
+  min-width: 0;
   padding: 1rem 0;
   border-bottom: 1px solid var(--oat-light);
 }
@@ -841,10 +922,15 @@ h2 {
 .trade-link-row small {
   color: var(--warm-silver);
   font-size: 0.95rem;
+  overflow-wrap: anywhere;
 }
 
 .trade-link-row:hover span {
   color: var(--matcha-600);
+}
+
+.trade-link-row-primary span {
+  color: var(--clay-black);
 }
 
 /* ── Metric Grid ── */
@@ -1180,6 +1266,10 @@ select:focus-visible {
     font-size: 3rem;
   }
 
+  .trade-hero .headline-question {
+    font-size: 3.25rem;
+  }
+
   .decision-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1236,6 +1326,10 @@ select:focus-visible {
   }
 
   .board-intro h1 {
+    font-size: 2.25rem;
+  }
+
+  .trade-hero .headline-question {
     font-size: 2.25rem;
   }
 

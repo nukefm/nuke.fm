@@ -499,7 +499,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
 
     trade_response = client.get("/trade")
     assert trade_response.status_code == 200
-    assert "Run a nuke.fm trading agent" in trade_response.text
+    assert "Send this to your agent" in trade_response.text
+    assert "Read https://github.com/nukefm/nukefm-forecast-trader-skill and follow the instructions to trade on nuke.fm." in trade_response.text
     assert "https://github.com/nukefm/nukefm-trader-bot" in trade_response.text
     assert "https://github.com/nukefm/nukefm-forecast-trader-skill" in trade_response.text
 

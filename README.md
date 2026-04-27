@@ -142,7 +142,7 @@ trading API, and bot-facing rationale flow. Important current constraints:
 The repo now includes a minimal EC2 deploy path under [`ops/ec2`](ops/ec2):
 
 - `bootstrap-host.sh` installs the host prerequisites, configures Caddy for `https://nukefm.xyz`, creates `/srv/nukefm`, installs the systemd service and refresh timers, and creates a bare git repo with a `post-receive` hook.
-- `push-production.sh` pushes the current local `HEAD` to that bare repo as `main`.
+- `push-production.sh` pushes the current local `HEAD` to that bare repo as `master`.
 - `sync-state.sh` copies `.env`, imports the two `secret-tool` seeds into the remote host, and starts the scheduled refresh timers.
 - `sync-state.sh --with-db` additionally restores `data/nukefm.sqlite3` as an explicit operator action.
 - Set `NUKEFM_SSH_KEY=/path/to/key.pem` when the host uses a dedicated EC2 key pair instead of your default SSH agent/config.

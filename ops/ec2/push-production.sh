@@ -39,4 +39,4 @@ else
     git remote add "${remote_name}" "${remote_url}"
 fi
 
-git push "${remote_name}" HEAD:main
+git push "${remote_name}" HEAD:master

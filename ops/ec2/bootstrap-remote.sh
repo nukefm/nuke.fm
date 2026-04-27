@@ -35,7 +35,7 @@ apt-get install -y ca-certificates caddy curl dbus-x11 git gnome-keyring libsecr
 install -d -o "${deploy_user}" -g "${deploy_user}" -m 755 "${app_root}" "${app_root}/git" "${work_tree}" "${shared_dir}"
 
 if [ ! -d "${git_dir}" ]; then
-    su - "${deploy_user}" -c "git init --bare --initial-branch=main '${git_dir}'"
+    su - "${deploy_user}" -c "git init --bare --initial-branch=master '${git_dir}'"
 fi
 
 if [ ! -x "${deploy_home}/.local/bin/uv" ]; then
@@ -223,13 +223,13 @@ export HOME="\${deploy_home}"
 export PATH="\${deploy_home}/.local/bin:/usr/local/bin:/usr/bin:/bin"
 unset GIT_DIR GIT_WORK_TREE
 
-git --work-tree="\${work_tree}" --git-dir="\${git_dir}" checkout -f main
+git --work-tree="\${work_tree}" --git-dir="\${git_dir}" checkout -f master
 rm -f "\${work_tree}/.git"
 checkout_submodule() {
     local path="\$1"
     local url="\$2"
     local commit
-    commit="\$(git --git-dir="\${git_dir}" ls-tree main "\${path}" | awk '{print \$3}')"
+    commit="\$(git --git-dir="\${git_dir}" ls-tree master "\${path}" | awk '{print \$3}')"
     rm -rf "\${work_tree}/\${path}"
     git clone --quiet "\${url}" "\${work_tree}/\${path}"
     git -C "\${work_tree}/\${path}" checkout --quiet "\${commit}"

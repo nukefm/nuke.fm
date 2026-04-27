@@ -277,7 +277,8 @@
             borderWidth: 2,
             pointRadius: overlayPoints.length > 1 ? 0 : 3,
             pointHoverRadius: 4,
-            tension: 0.22,
+            cubicInterpolationMode: "monotone",
+            tension: 0.4,
           },
           {
             label: `Predicted price (${chartDeadline})`,

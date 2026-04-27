@@ -434,15 +434,16 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "What will GAMMA trade at by 2026-07-14?" not in detail_response.text
     assert "By 14 Jul" in detail_response.text
     assert "2026-07-14T12:00:00+00:00" not in detail_response.text
-    assert "Live PM signal based on market price" in detail_response.text
-    assert "5 minute snapshots of token price and PM implied price." in detail_response.text
+    assert "Live prediction signal based on market price" in detail_response.text
+    assert "Prediction line = predicted price on 14 Jul." in detail_response.text
     assert "Market lifecycle and Bags launch context." in detail_response.text
-    assert "The PM is live. Compare" not in detail_response.text
     assert "Aligned 5 minute snapshots" not in detail_response.text
     assert "Lifecycle details and Bags launch context that stay useful" not in detail_response.text
     assert "Prediction 24h volume" in detail_response.text
     assert "Implied price" in detail_response.text
-    assert "Token price vs PM implied price" in detail_response.text
+    assert "Spot vs predicted price" in detail_response.text
+    assert "Predicted price (${chartDeadline})" in detail_response.text
+    assert "PM " not in detail_response.text
     assert "Bags context" in detail_response.text
     assert "Bags mint" in detail_response.text
     assert 'href="https://bags.fm/Mint333" target="_blank" rel="noopener">Open on Bags</a>' in detail_response.text

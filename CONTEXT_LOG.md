@@ -82,6 +82,7 @@
 - The token detail overlay chart uses its own `market_chart_snapshots` table and 5-minute EC2 timer instead of reusing hourly settlement snapshots. That separation is intentional: the chart is a trader-facing read, while hourly settlement snapshots remain the canonical resolution/reference path.
 - Each chart row stores both the current token USD price and the current market `YES` probability at the same bucketed timestamp so the frontend can render one aligned dual-axis overlay without stitching together mismatched histories at read time.
 - Rolled active market series should be included in the token detail chart once their rows have been normalized to `implied_price_usd`; the user cares about easy prediction viewing more than preserving contract-series separation in the chart. Keep contract details available elsewhere, but do not hide older live predictions from the main chart solely because bounds/expiry/pool state differ.
+- The token detail chart should describe the market line as a prediction/predicted price rather than using the acronym "PM"; the intended fast read is current spot price versus the predicted expiry price on one shared USD axis.
 
 ## Fixed-Anchor Market Lifecycle
 

@@ -260,7 +260,7 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
 
     detail_page_response = client.get("/tokens/Mint444")
     assert detail_page_response.status_code == 200
-    assert detail_page_response.text.index("Bot notes") < detail_page_response.text.index("Token price vs PM implied price")
+    assert detail_page_response.text.index("Bot notes") < detail_page_response.text.index("Spot vs predicted price")
     assert "<li>Liquidity is thin, but the Bags tape still has enough bid support for a higher expiry print.</li>" in detail_page_response.text
     assert "<p>Liquidity is thin" not in detail_page_response.text
 

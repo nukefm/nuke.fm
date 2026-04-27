@@ -4,13 +4,14 @@
 {% set market = token.current_market %}
 {% set chart = token.current_market_chart %}
 {% set heading_deadline = short_deadline(market.expiry) %}
+{% set chart_deadline = heading_deadline|replace("By ", "") if heading_deadline else "expiry" %}
 {% set nuke_sign_class = predicted_nuke_sign_class(market.predicted_nuke_fraction) %}
 {% if market.state == "awaiting_liquidity" %}
   {% set trader_state = "Signal waiting on seed" %}
   {% set trader_state_note = "This Bags market is staged with a scalar LONG/SHORT price range. Trading opens after the first funded liquidity deposit." %}
 {% elif market.state == "open" %}
   {% set trader_state = "Live prediction" %}
-  {% set trader_state_note = "Live PM signal based on market price, liquidity, and the latest 24h-median Bags token price." %}
+  {% set trader_state_note = "Live prediction signal based on market price, liquidity, and the latest 24h-median Bags token price." %}
 {% elif market.state == "halted" %}
   {% set trader_state = "Signal paused" %}
   {% set trader_state_note = "Trading is halted. Use the last captured 24h-median Bags token price, implied price, and activity trail as context, not as a fresh live read." %}
@@ -115,13 +116,13 @@
   <div class="detail-section-heading">
     <div>
       <p class="eyebrow">Overlay</p>
-      <h2>Token price vs PM implied price</h2>
+      <h2>Spot vs predicted price</h2>
     </div>
-    <p class="section-copy">5 minute snapshots of token price and PM implied price.</p>
+    <p class="section-copy">Prediction line = predicted price on {{ chart_deadline }}.</p>
   </div>
   {% if chart.points %}
   <div class="chart-shell">
-    <canvas id="token-overlay-chart" aria-label="Token price and implied price chart" role="img"></canvas>
+    <canvas id="token-overlay-chart" aria-label="Spot price and predicted price chart" role="img"></canvas>
   </div>
   {% if chart.points|length == 1 %}
   <p class="availability-note">Only one chart point is available so far. The overlay will become readable as the 5 minute snapshot job fills in more history.</p>
@@ -211,13 +212,10 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script>
   const chartPayload = {{ chart | tojson }};
+  const chartDeadline = {{ chart_deadline | tojson }};
   const chartCanvas = document.getElementById("token-overlay-chart");
 
   if (chartCanvas && window.Chart) {
-    const numberFormatter = new Intl.NumberFormat("en-US", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 8,
-    });
     const formatUsd = (value) => {
       const absoluteValue = Math.abs(value);
       const maximumFractionDigits = absoluteValue !== 0 && absoluteValue < 0.01 ? 12 : 4;
@@ -236,7 +234,7 @@
         labels: overlayPoints.map((point) => point.captured_at),
         datasets: [
           {
-            label: "Token price",
+            label: "Spot price",
             data: overlayPoints.map((point) => Number(point.underlying_price_usd)),
             yAxisID: "price",
             borderColor: "#078a52",
@@ -247,12 +245,13 @@
             tension: 0.22,
           },
           {
-            label: "Implied price",
+            label: `Predicted price (${chartDeadline})`,
             data: overlayPoints.map((point) => Number(point.implied_price_usd)),
-            yAxisID: "implied",
+            yAxisID: "price",
             borderColor: "#fc7981",
             backgroundColor: "rgba(252, 121, 129, 0.08)",
             borderWidth: 2,
+            borderDash: [7, 5],
             pointRadius: overlayPoints.length > 1 ? 0 : 3,
             pointHoverRadius: 4,
             tension: 0.22,
@@ -305,19 +304,9 @@
           price: {
             type: "linear",
             position: "left",
-            grid: { color: "rgba(7, 138, 82, 0.08)" },
+            grid: { color: "rgba(218, 212, 200, 0.4)" },
             ticks: {
-              color: "#078a52",
-              font: { family: "'Space Mono', monospace", size: 11 },
-              callback(value) { return formatUsd(value); },
-            },
-          },
-          implied: {
-            type: "linear",
-            position: "right",
-            grid: { drawOnChartArea: false },
-            ticks: {
-              color: "#fc7981",
+              color: "#5f5b52",
               font: { family: "'Space Mono', monospace", size: 11 },
               callback(value) { return formatUsd(value); },
             },

@@ -41,6 +41,7 @@
 - Token-level metrics are stored as snapshots in SQLite instead of being fetched during reads. That keeps the board deterministic and lets the operator refresh metrics explicitly with a CLI command.
 - Bags pools is the board/catalog token-universe source. Jupiter token search backs exact-mint metadata hydration, token metric snapshots, and per-market chart snapshots.
 - Underlying volume is stored from the current metric source snapshot, while displayed current market cap is derived from token supply and the latest canonical hourly reference price.
+- The PM signal percent must use the same price basis as bots and scalar forecast math: `implied_price_usd / reference_price_usd - 1`. Do not compute its sign from predicted/current market cap because token metric snapshots can be on a different price basis than the active market reference snapshot.
 - Missing metrics stay `null` and are sorted last in both directions so absent data never dominates the board.
 - The EC2 deploy should install a 10-minute catalog/metric refresh timer. Weekly seeding alone is not enough, because stale token snapshots make market-cap sorting look broken even when the comparator is correct.
 

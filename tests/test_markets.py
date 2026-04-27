@@ -1218,6 +1218,49 @@ def test_current_market_serialization_uses_trailing_24h_pm_volume(tmp_path: Path
     assert token_cards[0]["current_market"]["pm_volume_24h_usdc"] == "2.5"
 
 
+def test_predicted_nuke_percent_uses_reference_price_not_market_cap(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    catalog = Catalog(database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint="MintSignal",
+                name="Signal",
+                symbol="SIG",
+                image_url=None,
+                launched_at="2026-04-15T10:00:00+00:00",
+                creator=None,
+            )
+        ]
+    )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+    create_markets_from_prices(market_store, {"MintSignal": Decimal("1")})
+    market_id = market_store.get_token_detail("MintSignal")["current_market"]["id"]
+
+    market_store.record_market_liquidity_credit(
+        market_id=market_id,
+        amount_atomic=1_000_000,
+        observed_balance_after_atomic=1_000_000,
+        credited_at="2026-04-15T12:30:00+00:00",
+    )
+    market_store.capture_hourly_snapshots(
+        FakeSettlementPriceClient([Decimal("2")]),
+        captured_at="2026-04-15T13:00:00+00:00",
+    )
+
+    current_market = market_store.get_token_detail("MintSignal")["current_market"]
+
+    assert current_market["implied_price_usd"] == "1"
+    assert current_market["reference_price_usd"] == "2"
+    assert current_market["predicted_market_cap_usd"] == "1000"
+    assert current_market["underlying_market_cap_usd"] == "1000"
+    assert current_market["predicted_nuke_percent"] == "-50%"
+    assert current_market["predicted_nuke_fraction"] == "-0.5"
+
+
 def test_market_chart_snapshots_bucket_and_serialize_current_series(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     catalog = Catalog(database_path)

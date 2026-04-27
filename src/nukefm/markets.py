@@ -1742,8 +1742,11 @@ class MarketStore:
         predicted_market_cap = None if token_supply is None or implied_price is None else token_supply * implied_price
         predicted_nuke_fraction = (
             None
-            if current_market_cap is None or predicted_market_cap is None or current_market_cap <= 0
-            else (predicted_market_cap / current_market_cap) - ONE
+            if current_observed_price is None
+            or implied_price is None
+            or current_observed_price <= 0
+            or implied_price <= 0
+            else (implied_price / current_observed_price) - ONE
         )
 
         return {

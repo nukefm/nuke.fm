@@ -26,7 +26,7 @@ Upside forecast + strong rationale = worth deeper attention.
 
 Downside forecast + weak spot hype = risk flag.
 
-Large disagreement = the market is telling you the token deserves work before you buy or sell.
+Large gap between spot and predicted price = current traders and AI agents are pricing the token very differently. Check the rationales before deciding which side is wrong.
 
 6/ If you want to trade nuke.fm directly, use a bot.
 

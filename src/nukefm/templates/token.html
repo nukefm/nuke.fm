@@ -45,25 +45,28 @@
       <div>
         <p class="eyebrow">Market sponsorship</p>
         <h2 id="liquidity-deposit-title">
-          USDC liquidity deposit address
+          USDC liquidity deposit wallet
           <span class="tooltip-wrap">
             <button class="tooltip-trigger" type="button" aria-label="What is this address for?">?</button>
             <span class="tooltip-bubble" role="tooltip">
-              Send only Solana USDC to sponsor this prediction market's liquidity. Deposits are one-way, do not mint LP shares, and cannot be withdrawn.
+              Send only Solana USDC to this wallet to sponsor this prediction market's liquidity. Deposits are one-way, do not mint LP shares, and cannot be withdrawn.
             </span>
           </span>
         </h2>
       </div>
       <a class="bags-token-link detail-bags-link" href="{{ token.bags_token_url }}" target="_blank" rel="noopener">Open on Bags</a>
     </div>
-    {% if market.liquidity_deposit_address %}
+    {% if market.liquidity_deposit_wallet_address %}
     <div class="address-row prominent-address-row">
-      <code class="address-block">{{ market.liquidity_deposit_address }}</code>
-      <button class="copy-button" type="button" data-copy="{{ market.liquidity_deposit_address }}">Copy</button>
+      <code class="address-block" data-liquidity-wallet-address>{{ market.liquidity_deposit_wallet_address }}</code>
+      <button class="copy-button" type="button" data-copy="{{ market.liquidity_deposit_wallet_address }}">Copy</button>
     </div>
-    <p class="liquidity-deposit-note">Solana USDC only. Other tokens sent to this address may be lost.</p>
+    <p class="liquidity-deposit-note">Solana USDC only. Your wallet may pay a small one-time account creation fee if this is the first deposit.</p>
     {% else %}
-    <p class="availability-note">The USDC liquidity deposit address has not been assigned yet.</p>
+    <div class="reserve-liquidity-row">
+      <p class="availability-note" data-liquidity-address-status>This market has no deposit wallet yet.</p>
+      <button class="copy-button" type="button" data-reserve-liquidity-address="{{ market.id }}">Create deposit wallet</button>
+    </div>
     {% endif %}
   </section>
 
@@ -388,6 +391,27 @@
         button.textContent = "Copy";
         button.classList.remove("copied");
       }, 1400);
+    });
+  });
+
+  document.querySelectorAll("[data-reserve-liquidity-address]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const marketId = button.dataset.reserveLiquidityAddress;
+      const status = document.querySelector("[data-liquidity-address-status]");
+      button.disabled = true;
+      button.textContent = "Creating";
+      try {
+        const response = await fetch(`/v1/public/markets/${marketId}/liquidity-address`, { method: "POST" });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.detail || "Could not create deposit wallet.");
+        }
+        window.location.reload();
+      } catch (error) {
+        if (status) status.textContent = error.message;
+        button.disabled = false;
+        button.textContent = "Create deposit wallet";
+      }
     });
   });
 

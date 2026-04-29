@@ -720,6 +720,13 @@ h2 {
   font-weight: 600;
 }
 
+.reserve-liquidity-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .tooltip-wrap {
   position: relative;
   display: inline-flex;
@@ -1489,7 +1496,10 @@ select:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .address-row { display: grid; }
+  .address-row,
+  .reserve-liquidity-row {
+    display: grid;
+  }
 
   .liquidity-deposit-panel {
     padding: 1rem;

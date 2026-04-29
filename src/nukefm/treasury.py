@@ -52,6 +52,14 @@ class SolanaTreasury:
             owner_keypair=self._derive_user_owner_keypair(user_id),
         )
 
+    def derive_market_liquidity_account(self, market_id: int) -> DepositAccountAddresses:
+        owner_wallet = self._derive_market_owner_keypair(market_id).pubkey()
+        token_account = get_associated_token_address(owner_wallet, self._usdc_mint)
+        return DepositAccountAddresses(
+            owner_wallet_address=str(owner_wallet),
+            token_account_address=str(token_account),
+        )
+
     def ensure_market_liquidity_account(self, market_id: int) -> DepositAccountAddresses:
         return self._ensure_derived_token_account(
             owner_keypair=self._derive_market_owner_keypair(market_id),
@@ -88,7 +96,14 @@ class SolanaTreasury:
     def reconcile_market_liquidity(self, market_store) -> list[dict]:
         credited_deposits: list[dict] = []
         for deposit_account in market_store.list_market_liquidity_accounts():
-            onchain_balance_atomic = self.get_token_account_balance(deposit_account["token_account_address"])
+            onchain_balance_atomic = self.get_existing_token_account_balance(deposit_account["token_account_address"])
+            if onchain_balance_atomic is None:
+                continue
+            if deposit_account["ata_initialized_at"] is None:
+                market_store.mark_market_liquidity_account_initialized(
+                    market_id=deposit_account["market_id"],
+                    initialized_at=utc_now(),
+                )
             observed_balance_atomic = deposit_account["observed_balance_atomic"]
             if onchain_balance_atomic < observed_balance_atomic:
                 raise RuntimeError(
@@ -273,6 +288,19 @@ class SolanaTreasury:
     def get_token_account_balance(self, token_account_address: str) -> int:
         response = self._rpc_call(
             lambda: self._client.get_token_account_balance(Pubkey.from_string(token_account_address)),
+            description=f"get token account balance for {token_account_address}",
+        )
+        return int(response.value.amount)
+
+    def get_existing_token_account_balance(self, token_account_address: str) -> int | None:
+        token_account = Pubkey.from_string(token_account_address)
+        if self._rpc_call(
+            lambda: self._client.get_account_info(token_account),
+            description=f"get account info for {token_account_address}",
+        ).value is None:
+            return None
+        response = self._rpc_call(
+            lambda: self._client.get_token_account_balance(token_account),
             description=f"get token account balance for {token_account_address}",
         )
         return int(response.value.amount)

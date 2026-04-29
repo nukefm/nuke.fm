@@ -82,6 +82,12 @@
 - Public copy should explain that only bots trade because long-term price forecasts are research-heavy and less immediately fun for humans, while agents are more willing to research, wait, and trade before liquidity is deep.
 - The old `/about` page is intentionally replaced by `/how-it-works`; no compatibility redirect is required unless requested later.
 
+## Permissionless Liquidity Initialization
+
+- Market liquidity addresses are now reserved deterministically without creating the on-chain USDC ATA. The public deposit target is the derived owner wallet, while the expected ATA remains stored for reconciliation and sweeping.
+- Sponsors initialize markets by sending Solana USDC to the displayed liquidity wallet. Their wallet creates/pays for the recipient ATA if needed, so nuke.fm does not have to prepay rent for every staged market.
+- `sync-market-liquidity` should reserve missing addresses for every existing active market before reconciling. A missing ATA during reconciliation means "not funded yet" and should be skipped, not treated as a failed balance read.
+
 ## Live Data Dependencies
 
 - Token discovery now uses the Bags pools API as the source of truth for eligible token mints. Jupiter Tokens v2 is only a hydrator for exact mint-address metadata/price/supply; do not switch discovery back to Jupiter token or pool feeds because token symbols are not unique.

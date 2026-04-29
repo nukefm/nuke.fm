@@ -96,9 +96,13 @@ def main() -> None:
 
     if arguments.command == "sync-market-liquidity":
         treasury_instance = get_treasury()
-        market_store.ensure_missing_market_liquidity_accounts(treasury_instance)
+        reserved_accounts = market_store.reserve_missing_market_liquidity_accounts(treasury_instance)
         credited_deposits = treasury_instance.reconcile_market_liquidity(market_store)
-        logger.info(f"Credited {len(credited_deposits)} market liquidity balance changes.")
+        logger.info(
+            "Reserved {} market liquidity addresses and credited {} market liquidity balance changes.",
+            len(reserved_accounts),
+            len(credited_deposits),
+        )
         return
 
     if arguments.command == "sync-token-metrics":

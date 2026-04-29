@@ -848,6 +848,93 @@ class MarketStore:
             ).fetchone()
             return self._serialize_market_liquidity_account(row)
 
+    def reserve_market_liquidity_account(
+        self,
+        market_id: int,
+        *,
+        owner_wallet_address: str,
+        token_account_address: str,
+    ) -> dict:
+        timestamp = utc_now()
+        with connect_database(self._database_path) as connection:
+            market = connection.execute(
+                """
+                SELECT id
+                FROM markets
+                WHERE id = ?
+                  AND state IN ('awaiting_liquidity', 'open', 'halted')
+                """,
+                [market_id],
+            ).fetchone()
+            if market is None:
+                raise LookupError(f"Unknown active market id: {market_id}")
+
+            connection.execute(
+                """
+                INSERT INTO market_liquidity_accounts (
+                    market_id,
+                    owner_wallet_address,
+                    token_account_address,
+                    observed_balance_atomic,
+                    ata_initialized_at,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, 0, NULL, ?, ?)
+                ON CONFLICT(market_id) DO UPDATE SET
+                    owner_wallet_address = excluded.owner_wallet_address,
+                    token_account_address = excluded.token_account_address,
+                    updated_at = excluded.updated_at
+                """,
+                [market_id, owner_wallet_address, token_account_address, timestamp, timestamp],
+            )
+            connection.execute(
+                """
+                UPDATE markets
+                SET liquidity_deposit_address = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                [token_account_address, timestamp, market_id],
+            )
+            row = connection.execute(
+                """
+                SELECT *
+                FROM market_liquidity_accounts
+                WHERE market_id = ?
+                """,
+                [market_id],
+            ).fetchone()
+            return self._serialize_market_liquidity_account(row)
+
+    def reserve_missing_market_liquidity_accounts(self, treasury) -> list[dict]:
+        reserved_accounts: list[dict] = []
+        with connect_database(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT id
+                FROM markets
+                WHERE state IN ('awaiting_liquidity', 'open', 'halted')
+                  AND liquidity_deposit_address IS NULL
+                ORDER BY
+                    CASE state
+                        WHEN 'open' THEN 0
+                        WHEN 'halted' THEN 1
+                        ELSE 2
+                    END,
+                    id ASC
+                """
+            ).fetchall()
+        for row in rows:
+            addresses = treasury.derive_market_liquidity_account(row["id"])
+            reserved_accounts.append(
+                self.reserve_market_liquidity_account(
+                    row["id"],
+                    owner_wallet_address=addresses.owner_wallet_address,
+                    token_account_address=addresses.token_account_address,
+                )
+            )
+        return reserved_accounts
+
     def ensure_missing_market_liquidity_accounts(self, treasury) -> list[dict]:
         created_accounts: list[dict] = []
         with connect_database(self._database_path) as connection:
@@ -876,6 +963,26 @@ class MarketStore:
                 )
             )
         return created_accounts
+
+    def reserve_public_market_liquidity_account(self, market_id: int, treasury) -> dict:
+        addresses = treasury.derive_market_liquidity_account(market_id)
+        return self.reserve_market_liquidity_account(
+            market_id,
+            owner_wallet_address=addresses.owner_wallet_address,
+            token_account_address=addresses.token_account_address,
+        )
+
+    def mark_market_liquidity_account_initialized(self, *, market_id: int, initialized_at: str) -> None:
+        with connect_database(self._database_path) as connection:
+            connection.execute(
+                """
+                UPDATE market_liquidity_accounts
+                SET ata_initialized_at = COALESCE(ata_initialized_at, ?),
+                    updated_at = ?
+                WHERE market_id = ?
+                """,
+                [initialized_at, initialized_at, market_id],
+            )
 
     def list_market_liquidity_accounts(self) -> list[dict]:
         with connect_database(self._database_path) as connection:
@@ -1294,7 +1401,7 @@ class MarketStore:
             )
 
         if treasury is not None:
-            self.ensure_missing_market_liquidity_accounts(treasury)
+            self.reserve_missing_market_liquidity_accounts(treasury)
             treasury.sweep_market_revenue(self, limit=max(len(resolved_markets), 1))
 
         return resolved_markets
@@ -1723,6 +1830,14 @@ class MarketStore:
         pool = self._load_pool(connection, row["id"], required=False)
         latest_snapshot = self._latest_snapshot_row(connection, row["id"])
         latest_token_metrics = self._latest_token_metrics_row(connection, row["token_mint"])
+        liquidity_account = connection.execute(
+            """
+            SELECT owner_wallet_address, token_account_address, ata_initialized_at
+            FROM market_liquidity_accounts
+            WHERE market_id = ?
+            """,
+            [row["id"]],
+        ).fetchone()
         long_price_value = None if pool is None else long_price(pool)
         long_price_usd = None if long_price_value is None else format_decimal(long_price_value)
         short_price_usd = None if pool is None else format_decimal(short_price(pool))
@@ -1757,6 +1872,9 @@ class MarketStore:
             "market_start": row["market_start"],
             "expiry": row["expiry"],
             "liquidity_deposit_address": row["liquidity_deposit_address"],
+            "liquidity_deposit_wallet_address": None if liquidity_account is None else liquidity_account["owner_wallet_address"],
+            "liquidity_deposit_token_account_address": None if liquidity_account is None else liquidity_account["token_account_address"],
+            "liquidity_deposit_ata_initialized_at": None if liquidity_account is None else liquidity_account["ata_initialized_at"],
             "resolved_at": row["resolved_at"],
             "created_at": row["created_at"],
             "starting_price_usd": format_decimal(starting_price),

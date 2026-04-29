@@ -204,6 +204,23 @@ def create_app(
             raise HTTPException(status_code=404, detail="Token not found")
         return token
 
+    @app.post("/v1/public/markets/{market_id}/liquidity-address")
+    def reserve_market_liquidity_address(market_id: int, request: Request) -> dict:
+        try:
+            account = market_store.reserve_public_market_liquidity_account(
+                market_id,
+                _resolve_treasury(request),
+            )
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return {
+            "market_id": account["market_id"],
+            "liquidity_deposit_wallet_address": account["owner_wallet_address"],
+            "liquidity_deposit_token_account_address": account["token_account_address"],
+            "liquidity_deposit_address": account["token_account_address"],
+            "ata_initialized_at": account["ata_initialized_at"],
+        }
+
     @app.post("/v1/auth/challenge")
     def create_auth_challenge(body: ChallengeRequest) -> dict:
         try:

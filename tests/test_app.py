@@ -15,6 +15,12 @@ from nukefm.treasury import DepositAccountAddresses
 
 
 class FakeTreasury:
+    def derive_market_liquidity_account(self, market_id: int) -> DepositAccountAddresses:
+        return DepositAccountAddresses(
+            owner_wallet_address=f"market-owner-{market_id}",
+            token_account_address=f"market-deposit-{market_id}",
+        )
+
     def ensure_market_liquidity_account(self, market_id: int) -> DepositAccountAddresses:
         return DepositAccountAddresses(
             owner_wallet_address=f"market-owner-{market_id}",
@@ -323,7 +329,7 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
             ],
         )
 
-    app = create_app(settings=settings, catalog=catalog, market_store=market_store)
+    app = create_app(settings=settings, catalog=catalog, market_store=market_store, treasury=treasury)
     client = TestClient(app)
 
     token_response = client.get("/v1/public/tokens")
@@ -332,6 +338,8 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     gamma_token = next(token for token in token_response.json()["tokens"] if token["symbol"] == "GAMMA")
     assert gamma_token["bags_token_url"] == "https://bags.fm/Mint333"
     assert gamma_token["current_market"]["liquidity_deposit_address"] == "market-deposit-2"
+    assert gamma_token["current_market"]["liquidity_deposit_wallet_address"] == "market-owner-2"
+    assert gamma_token["current_market"]["liquidity_deposit_token_account_address"] == "market-deposit-2"
     assert gamma_token["current_market"]["pm_volume_24h_usdc"] == "1"
     assert gamma_token["current_market"]["implied_price_usd"] == "0.00000000045"
 
@@ -470,13 +478,14 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "PM " not in detail_response.text
     assert "Bags context" in detail_response.text
     assert "Bags mint" not in detail_response.text
-    assert "USDC liquidity deposit address" in detail_response.text
-    assert "Send only Solana USDC to sponsor this prediction market" in detail_response.text
-    assert "Solana USDC only. Other tokens sent to this address may be lost." in detail_response.text
+    assert "USDC liquidity deposit wallet" in detail_response.text
+    assert "Send only Solana USDC to this wallet to sponsor this prediction market" in detail_response.text
+    assert "Solana USDC only. Your wallet may pay a small one-time account creation fee if this is the first deposit." in detail_response.text
     assert 'href="https://bags.fm/Mint333" target="_blank" rel="noopener">Open on Bags</a>' in detail_response.text
     assert "Activation Gate" not in detail_response.text
     assert "Series mechanics" not in detail_response.text
-    assert detail_response.text.count("market-deposit-2") == 2
+    assert detail_response.text.count("market-owner-2") == 2
+    assert "market-deposit-2" not in detail_response.text
     assert "snapshot-market-charts" not in detail_response.text
     assert "token-overlay-chart" in detail_response.text
     assert "cdn.jsdelivr.net/npm/chart.js" in detail_response.text
@@ -518,6 +527,71 @@ def test_public_api_and_frontend_render(tmp_path: Path, monkeypatch) -> None:
     assert "Read https://github.com/nukefm/nukefm-forecast-trader-skill and follow the instructions to trade on nuke.fm." in trade_response.text
     assert "https://github.com/nukefm/nukefm-trader-bot" in trade_response.text
     assert "https://github.com/nukefm/nukefm-forecast-trader-skill" in trade_response.text
+
+
+def test_public_liquidity_address_reservation(tmp_path: Path) -> None:
+    settings = app_settings(tmp_path)
+    catalog = Catalog(settings.database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint="MintSeed",
+                name="Seed",
+                symbol="SEED",
+                image_url=None,
+                launched_at=None,
+                creator=None,
+            )
+        ]
+    )
+
+    market_store = MarketStore(settings.database_path)
+    market_store.initialize()
+    market_store.capture_token_metrics(
+        FakeDexScreenerClient(
+            {
+                "MintSeed": [
+                    DexScreenerPair(
+                        pair_address="seed-pair",
+                        dex_id="raydium",
+                        price_usd=Decimal("1"),
+                        liquidity_usd=Decimal("100"),
+                        volume_h24_usd=Decimal("10"),
+                        market_cap_usd=Decimal("1000"),
+                    )
+                ]
+            }
+        ),
+        captured_at="2026-04-15T12:00:00+00:00",
+    )
+
+    app = create_app(settings=settings, catalog=catalog, market_store=market_store, treasury=FakeTreasury())
+    client = TestClient(app)
+
+    detail_response = client.get("/tokens/MintSeed")
+    assert detail_response.status_code == 200
+    assert "This market has no deposit wallet yet." in detail_response.text
+    assert "Create deposit wallet" in detail_response.text
+
+    market_id = client.get("/v1/public/tokens/MintSeed").json()["current_market"]["id"]
+    reservation_response = client.post(f"/v1/public/markets/{market_id}/liquidity-address")
+    assert reservation_response.status_code == 200
+    assert reservation_response.json() == {
+        "market_id": market_id,
+        "liquidity_deposit_wallet_address": f"market-owner-{market_id}",
+        "liquidity_deposit_token_account_address": f"market-deposit-{market_id}",
+        "liquidity_deposit_address": f"market-deposit-{market_id}",
+        "ata_initialized_at": None,
+    }
+
+    updated_detail_response = client.get("/tokens/MintSeed")
+    assert updated_detail_response.status_code == 200
+    assert f"market-owner-{market_id}" in updated_detail_response.text
+    assert "This market has no deposit wallet yet." not in updated_detail_response.text
+
+    missing_response = client.post("/v1/public/markets/999/liquidity-address")
+    assert missing_response.status_code == 404
 
 
 def test_board_can_show_uninitialized_markets_after_reset(tmp_path: Path) -> None:

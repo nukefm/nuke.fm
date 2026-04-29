@@ -19,11 +19,18 @@ from nukefm.treasury import DepositAccountAddresses
 class FakeTreasury:
     def __init__(self) -> None:
         self._balances: dict[str, int] = {}
+        self._existing_token_accounts: set[str] = set()
 
     def ensure_user_deposit_account(self, user_id: int) -> DepositAccountAddresses:
         return DepositAccountAddresses(
             owner_wallet_address=f"owner-{user_id}",
             token_account_address=f"deposit-{user_id}",
+        )
+
+    def derive_market_liquidity_account(self, market_id: int) -> DepositAccountAddresses:
+        return DepositAccountAddresses(
+            owner_wallet_address=f"market-owner-{market_id}",
+            token_account_address=f"market-deposit-{market_id}",
         )
 
     def ensure_market_liquidity_account(self, market_id: int) -> DepositAccountAddresses:
@@ -33,7 +40,11 @@ class FakeTreasury:
         )
 
     def set_balance(self, token_account_address: str, amount_atomic: int) -> None:
+        self._existing_token_accounts.add(token_account_address)
         self._balances[token_account_address] = amount_atomic
+
+    def initialize_token_account(self, token_account_address: str) -> None:
+        self._existing_token_accounts.add(token_account_address)
 
     def reconcile_deposits(self, account_store: AccountStore) -> list[dict]:
         credited = []
@@ -74,6 +85,13 @@ class FakeTreasury:
     def reconcile_market_liquidity(self, market_store) -> list[dict]:
         credited = []
         for deposit_account in market_store.list_market_liquidity_accounts():
+            if deposit_account["token_account_address"] not in self._existing_token_accounts:
+                continue
+            if deposit_account["ata_initialized_at"] is None:
+                market_store.mark_market_liquidity_account_initialized(
+                    market_id=deposit_account["market_id"],
+                    initialized_at="2026-04-15T12:31:00+00:00",
+                )
             current_balance = self._balances.get(
                 deposit_account["token_account_address"],
                 deposit_account["observed_balance_atomic"],
@@ -383,3 +401,61 @@ def test_private_auth_deposits_and_withdrawals(tmp_path: Path) -> None:
     portfolio_response = client.get("/v1/private/account/portfolio", headers=headers)
     assert portfolio_response.status_code == 200
     assert len(portfolio_response.json()["trade_history"]) == 2
+
+
+def test_permissionless_market_liquidity_reconciliation(tmp_path: Path) -> None:
+    settings = _make_settings(tmp_path)
+    catalog = Catalog(settings.database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint="MintSeed",
+                name="Seed",
+                symbol="SEED",
+                image_url=None,
+                launched_at=None,
+                creator=None,
+            )
+        ]
+    )
+
+    treasury = FakeTreasury()
+    app = create_app(settings=settings, catalog=catalog, treasury=treasury)
+    app.state.market_store.capture_token_metrics(
+        FakeDexScreenerClient(
+            {
+                "MintSeed": [
+                    DexScreenerPair(
+                        pair_address="seed-pair",
+                        dex_id="raydium",
+                        price_usd=Decimal("1"),
+                        liquidity_usd=Decimal("100"),
+                        volume_h24_usd=Decimal("10"),
+                        market_cap_usd=Decimal("1000"),
+                    )
+                ]
+            }
+        ),
+        captured_at="2026-04-15T12:00:00+00:00",
+    )
+    market_id = app.state.market_store.list_token_cards()[0]["current_market"]["id"]
+    app.state.market_store.reserve_missing_market_liquidity_accounts(treasury)
+
+    assert treasury.reconcile_market_liquidity(app.state.market_store) == []
+    market = app.state.market_store.list_token_cards()[0]["current_market"]
+    assert market["state"] == "awaiting_liquidity"
+    assert market["liquidity_deposit_ata_initialized_at"] is None
+
+    treasury.initialize_token_account(f"market-deposit-{market_id}")
+    assert treasury.reconcile_market_liquidity(app.state.market_store) == []
+    market = app.state.market_store.list_token_cards()[0]["current_market"]
+    assert market["state"] == "awaiting_liquidity"
+    assert market["liquidity_deposit_ata_initialized_at"] == "2026-04-15T12:31:00+00:00"
+
+    treasury.set_balance(f"market-deposit-{market_id}", parse_usdc_amount("7"))
+    credited = treasury.reconcile_market_liquidity(app.state.market_store)
+    assert credited[0]["amount_usdc"] == "7"
+    market = app.state.market_store.list_token_cards()[0]["current_market"]
+    assert market["state"] == "open"
+    assert market["total_liquidity_usdc"] == "7"

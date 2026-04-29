@@ -61,9 +61,9 @@ The public trade page links to the Python trader bot and the Claude skill:
 Liquidity deposits are market sponsorship, not yield. They are one-way, do not mint LP shares, and
 cannot be withdrawn. A bags.fm creator or whale can sponsor depth so AI-agent forecasts are more
 tradable and more credible, signaling that the token has long-term support and is less likely to
-nuke. To provide liquidity, open a token detail page, copy the liquidity deposit address, send
-Solana USDC to that address, and wait for reconciliation. The first credited liquidity deposit opens
-an unseeded market.
+nuke. To provide liquidity, open a token detail page, create or copy the liquidity deposit wallet,
+send Solana USDC to that wallet, and wait for reconciliation. The first credited liquidity deposit
+opens an unseeded market.
 
 ## How It Works
 
@@ -74,8 +74,9 @@ each mint through Jupiter Tokens v2 by exact token address, and stores token met
 SQLite database.
 
 Second, the catalog layer stores token metadata and market state, while the market lifecycle code
-creates missing visible markets from real observed prices during token-metric refreshes. On-chain
-market liquidity account creation remains part of `sync-market-liquidity`, not ingestion.
+creates missing visible markets from real observed prices during token-metric refreshes. Market
+liquidity wallets are reserved deterministically and can receive permissionless Solana USDC deposits
+before the platform creates any token account.
 
 Third, the market engine stores a weighted LONG/SHORT pool for each active market. Liquidity deposits
 mint equal LONG and SHORT inventory into the pool, then retune the weights so displayed prices stay
@@ -111,6 +112,8 @@ The current implementation covers the market engine, settlement loop, read-only 
 trading API, and bot-facing rationale flow. Important current constraints:
 
 - market liquidity deposits are one-way only and do not mint LP shares
+- permissionless market sponsors send Solana USDC to the displayed liquidity deposit wallet, which
+  lets the sponsor pay any first associated-token-account rent instead of the platform
 - revenue sweep records the full internal leftover backing, but the on-chain transfer only sweeps
   the market-specific USDC deposit account because user trading stays offchain inside the shared treasury
 - the web frontend remains read-only even though the private trading API is live
@@ -230,6 +233,11 @@ does not sweep or trade from them yet.
 
 Market liquidity deposits use the same monotonic-balance reconciliation pattern, but they credit
 weighted-pool depth and market cash backing instead of a user cash balance.
+
+Market liquidity addresses are deterministic. `sync-market-liquidity` reserves missing addresses for
+existing active markets before reconciling balances, and the public liquidity-address endpoint can
+reserve a single market immediately. If the expected USDC token account does not exist yet,
+reconciliation skips it until a sponsor's transfer creates it.
 
 Weekly auto-seeds are different on purpose. They deepen the top current markets by latest stored
 underlying 24h token volume. Markets without a latest volume snapshot are skipped rather than

@@ -16,6 +16,12 @@ from nukefm.weighted_pool import format_decimal, long_price
 
 
 class FakeTreasury:
+    def derive_market_liquidity_account(self, market_id: int) -> DepositAccountAddresses:
+        return DepositAccountAddresses(
+            owner_wallet_address=f"market-owner-{market_id}",
+            token_account_address=f"market-deposit-{market_id}",
+        )
+
     def ensure_market_liquidity_account(self, market_id: int) -> DepositAccountAddresses:
         return DepositAccountAddresses(
             owner_wallet_address=f"market-owner-{market_id}",
@@ -100,6 +106,55 @@ def create_markets_from_prices(
         ),
         captured_at=captured_at,
     )
+
+
+def test_reserve_missing_market_liquidity_accounts_without_opening_market(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    catalog = Catalog(database_path)
+    catalog.initialize()
+    catalog.ingest_tokens(
+        [
+            BagsToken(
+                mint="MintSeed",
+                name="Seed",
+                symbol="SEED",
+                image_url=None,
+                launched_at=None,
+                creator=None,
+            )
+        ]
+    )
+
+    market_store = MarketStore(database_path)
+    market_store.initialize()
+    create_markets_from_prices(market_store, {"MintSeed": Decimal("2")})
+
+    reserved = market_store.reserve_missing_market_liquidity_accounts(FakeTreasury())
+    assert reserved == [
+        {
+            "market_id": 1,
+            "owner_wallet_address": "market-owner-1",
+            "token_account_address": "market-deposit-1",
+            "observed_balance_atomic": 0,
+            "observed_balance_usdc": "0",
+            "ata_initialized_at": None,
+            "created_at": reserved[0]["created_at"],
+            "updated_at": reserved[0]["updated_at"],
+        }
+    ]
+
+    repeated = market_store.reserve_missing_market_liquidity_accounts(FakeTreasury())
+    assert repeated == []
+
+    token = market_store.get_token_detail("MintSeed")
+    assert token is not None
+    market = token["current_market"]
+    assert market["state"] == "awaiting_liquidity"
+    assert market["liquidity_deposit_address"] == "market-deposit-1"
+    assert market["liquidity_deposit_wallet_address"] == "market-owner-1"
+    assert market["liquidity_deposit_token_account_address"] == "market-deposit-1"
+    assert market["liquidity_deposit_ata_initialized_at"] is None
+    assert market["total_liquidity_usdc"] is None
 
 
 def test_initialize_destructively_resets_legacy_binary_market_state(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
 # Token Creator Liquidity Thread
 
-1/ If you created a bags.fm token, nuke.fm liquidity lets AI agents trade forecasts on your token with real depth.
+1/ If you've created a bags.fm token, nukefm.xyz liquidity lets AI agents predict your token's price with real depth.
 
 That makes the prediction more credible, more visible, and more useful to traders deciding whether your token has long-term support.
 
